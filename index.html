@@ -1122,6 +1122,43 @@ function mineScore(d) {
   const teams = m.kind === "brackets" ? m.brackets.flatMap(g => g.teams) : m.pools.flatMap(pl => pl.teams.map(t => t.team));
   return ours.length || teams.some(t => p.includes(t)) ? 1 : 0;
 }
+/* The same inside a division: how much one pool or bracket (x) is about our teams (the My teams
+   picks and the followed team). focusMine opens the division on the best one, unless the one it
+   was left on is as good: each division remembers the pool last viewed, which used to win even
+   when it had none of our teams (Pool A, from before the team was picked). */
+function itemScore(d, m, x) {
+  const mine = t => isMine(d, t);
+  const games = m.kind === "brackets" ? x.matches.map(g => ({ a: g.top && g.top.team, b: g.bottom && g.bottom.team, open: !g.winner }))
+    : x.matches.map(g => ({ a: g.a, b: g.b, open: !g.played }));
+  const ours = games.filter(g => mine(g.a) || mine(g.b));
+  if (ours.some(g => g.open)) return 2;
+  return ours.length || (m.kind === "brackets" ? x.teams : x.teams.map(t => t.team)).some(mine) ? 1 : 0;
+}
+function focusMine(d) {
+  const s = slot(d.id), m = s.model; if (!m) return;
+  const items = m.kind === "brackets" ? m.brackets.filter(g => g.matches.length) : m.pools;
+  const key = x => m.kind === "brackets" ? x.key : x.letter;
+  const best = Math.max(0, ...items.map(x => itemScore(d, m, x))); if (!best) return;
+  const cur = items.find(x => key(x) === s.active);
+  if (!cur || itemScore(d, m, cur) < best) s.active = key(items.find(x => itemScore(d, m, x) === best));
+}
+/* Switching stage before My teams has loaded every division can't see where our teams play yet,
+   so the stage is noted (pendingFocus) and the choice is made again as divisions arrive, until
+   the visitor picks a division or pool themselves. */
+let pendingFocus = "";
+function retryFocus() {
+  const stage = currentStage();
+  if (!pendingFocus || pendingFocus !== stage || setup) return;
+  if (visibleDivisions(stage).every(d => slot(d.id).model)) pendingFocus = "";
+  const id = divisionFor(stage, settings.division), before = settings.division, active = slot(id).active;
+  settings.division = id; focusMine(current());
+  if (id === before && slot(id).active === active) return;
+  save();
+  // Not while a dropdown is open (a redraw would close it)
+  const a = document.activeElement; if (a && a.tagName === "SELECT") return;
+  flashKeys = new Set(); render();
+  const s = slot(id); if (!s.lastUpdated || Date.now() - s.lastUpdated > 30000) refresh();
+}
 // The division to open on a stage: the last one viewed if it has one of our teams with as much
 // still to play as any other, else the first (in list order) with the most, else the last viewed or the first
 function divisionFor(stage, remembered) {
@@ -1201,7 +1238,7 @@ async function loadClub(force) {
         s.model = parseTab(d, rows); s.saved = false;
         s.lastUpdated = new Date(); s.error = null;
         saveTab(d, rows);
-        draw();
+        draw(); retryFocus();
       }
     } catch (e) { club.failed.push(d.name); }
     club.done++;
@@ -1868,6 +1905,8 @@ $("stages").addEventListener("click", e => {
   settings.stage = b.dataset.stage;
   // Opens on the division with one of the teams picked on My teams, if there is one
   settings.division = divisionFor(settings.stage, (settings.lastByStage || {})[settings.stage]);
+  pendingFocus = settings.stage !== "club" && (settings.clubTeams || []).length && visibleDivisions(settings.stage).some(d => !slot(d.id).model) ? settings.stage : "";
+  if (settings.stage !== "club") focusMine(current());
   leaveSetup(); flashKeys = new Set(); save(); render();
   if (settings.stage === "club") return loadClub(false);
   const s = slot(current().id);
@@ -1898,13 +1937,14 @@ $("filters").addEventListener("change", e => {
 $("filters").addEventListener("click", e => { if (e.target.closest("#clearFilters")) clearFilters(); });
 $("divs").addEventListener("change", e => {
   const b = e.target.closest("#divSel"); if (!b || !b.value) return;
-  leaveSetup(); settings.division = b.value; flashKeys = new Set();
+  leaveSetup(); settings.division = b.value; flashKeys = new Set(); pendingFocus = "";
+  focusMine(current());
   settings.chosen = { ...(settings.chosen || {}), [currentStage()]: b.value }; save();
   render();
   const s = slot(settings.division);
   if (!s.lastUpdated || Date.now() - s.lastUpdated > 30000) refresh();
 });
-$("pools").addEventListener("click", e => { const b = e.target.closest("button[data-pool]"); if (b) { slot(current().id).active = b.dataset.pool; render(); } });
+$("pools").addEventListener("click", e => { const b = e.target.closest("button[data-pool]"); if (b) { pendingFocus = ""; slot(current().id).active = b.dataset.pool; render(); } });
 $("followSel").addEventListener("change", e => {
   settings.follow = e.target.value; save();
   const s = slot(current().id);
