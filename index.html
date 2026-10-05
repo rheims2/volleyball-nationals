@@ -1109,6 +1109,28 @@ const pickedIn = d => (settings.clubTeamsFor && settings.clubTeams || [])
 // The team followed on this division's page: one picked in Follow a team… if it plays here, else a My teams pick
 const followIn = (d, teams) => teams.includes(settings.follow) ? settings.follow : pickedIn(d).find(t => teams.includes(t)) || "";
 const isMine = (d, t) => !!t && (t === settings.follow || pickedIn(d).includes(t));
+/* How much division d is about the My teams picks, from its last loaded tab: 2 = a picked team
+   still has a match to play there, 1 = it played there, 0 = not there (or not loaded yet).
+   A team can show up on more than one tab (a Gold Ball loser moves to Bronze, a pool team to
+   an Iron pool), so the one with a match still to play wins. */
+function mineScore(d) {
+  const p = pickedIn(d), m = slot(d.id).model; if (!p.length || !m) return 0;
+  const games = m.kind === "brackets" ? m.brackets.flatMap(g => g.matches.map(x => ({ a: x.top && x.top.team, b: x.bottom && x.bottom.team, open: !x.winner })))
+    : m.pools.flatMap(pl => pl.matches.map(x => ({ a: x.a, b: x.b, open: !x.played })));
+  const ours = games.filter(g => p.includes(g.a) || p.includes(g.b));
+  if (ours.some(g => g.open)) return 2;
+  const teams = m.kind === "brackets" ? m.brackets.flatMap(g => g.teams) : m.pools.flatMap(pl => pl.teams.map(t => t.team));
+  return ours.length || teams.some(t => p.includes(t)) ? 1 : 0;
+}
+// The division to open on a stage: the last one viewed if it has one of our teams with as much
+// still to play as any other, else the first (in list order) with the most, else the last viewed or the first
+function divisionFor(stage, remembered) {
+  const options = visibleDivisions(stage);
+  const best = Math.max(0, ...options.map(mineScore));
+  const keep = options.find(d => d.id === remembered);
+  if (best && !(keep && mineScore(keep) === best)) return options.find(d => mineScore(d) === best).id;
+  return (keep || options[0] || {}).id;
+}
 const ageRank = age => (/^boys/i.test(age) ? 100 : 0) + (100 - (parseInt(age.replace(/\D+/g, "")) || (/jv/i.test(age) ? 17 : 0)));
 const DAYS = { mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6, sun: 7 };
 const DAY_NAMES = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
@@ -1582,6 +1604,13 @@ const courtLabel = c => String(c || "").trim().replace(/^.*?#\s*(\d+)\s*$/, "Cou
 const esc = v => String(v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const signed = n => n > 0 ? "+" + n : n < 0 ? "−" + Math.abs(n) : "0";
 
+// The dropdown lists the divisions with a team picked on My teams first, under "Your teams"
+function divOptions(list, cur) {
+  const opt = d => `<option value="${esc(d.id)}" ${!setup && d.id === cur ? "selected" : ""}>${esc(d.name)}</option>`;
+  const ours = list.filter(d => mineScore(d) > 0);
+  if (!ours.length) return list.map(opt).join("");
+  return `<optgroup label="Your teams">${ours.map(opt).join("")}</optgroup><optgroup label="All divisions">${list.filter(d => !ours.includes(d)).map(opt).join("")}</optgroup>`;
+}
 function renderDivisions() {
   const cur = current().id;
   const stage = currentStage();
@@ -1591,7 +1620,7 @@ function renderDivisions() {
   const list = visibleDivisions(stage);
   $("divs").innerHTML = list.length ? `<label class="divpick"><span class="sr">${stage === "brackets" ? "Bracket" : "Pool"}</span><select id="divSel">${
     setup ? `<option value="" selected>Pick a division…</option>` : ""}${
-    list.map(d => `<option value="${esc(d.id)}" ${!setup && d.id === cur ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></label>` : "";
+    divOptions(list, cur)}</select></label>` : "";
   $("divs").hidden = !list.length;
 }
 
@@ -1837,9 +1866,8 @@ $("stages").addEventListener("click", e => {
   const b = e.target.closest("button[data-stage]"); if (!b || b.dataset.stage === currentStage() && !setup) return;
   settings.lastByStage = { ...(settings.lastByStage || {}), [currentStage()]: current().id };
   settings.stage = b.dataset.stage;
-  const remembered = (settings.lastByStage || {})[settings.stage];
-  const options = visibleDivisions(settings.stage);
-  settings.division = (options.find(d => d.id === remembered) || options[0] || {}).id;
+  // Opens on the division with one of the teams picked on My teams, if there is one
+  settings.division = divisionFor(settings.stage, (settings.lastByStage || {})[settings.stage]);
   leaveSetup(); flashKeys = new Set(); save(); render();
   if (settings.stage === "club") return loadClub(false);
   const s = slot(current().id);
