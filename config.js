@@ -8,8 +8,8 @@ window.VIEWER_CONFIG = {
   appName: "Nationals",
 
   // Your divisions Google Sheet: renames, hides (Show = No) or adds divisions.
-  // Still the Regionals sheet: replace it with a Nationals divisions sheet before Nationals.
-  divisionsSheet: "https://docs.google.com/spreadsheets/d/1RtIsoomRwrn-kGPWbcSdB3gV0ZGjVJMQCpMT71Y70DI/edit?usp=sharing",
+  // The Nationals divisions sheet (not the Regionals one, which the Regionals site reads).
+  divisionsSheet: "https://docs.google.com/spreadsheets/d/1MTToTWDy3GxF_ThS9EnPtSnV5ijNjKha5nuX1_JMjxc/edit?usp=sharing",
 
   // Google Sheets API key, used only to build the division list from the NCHVC
   // index (never for scores). It is public by design: keep it restricted to the
