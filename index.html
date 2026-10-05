@@ -795,6 +795,10 @@ const eventName = () => (configDivs && configDivs.event) || (discovered && disco
 let discovered = SAVED_LIST;           // { at, divs, failed, event, books }: the latest index discovery, for building sheet rows
 let listCache = null, mergeWarning = "", discoveryError = "", discovery = null;
 try { localStorage.removeItem(KEY + "-discovered"); } catch (e) {}   // older versions kept a rebuilt list here
+// Rows rebuilt with the button stay on the setup page after a reload (in this browser, for the same index);
+// they're only rows to paste: the list itself still comes from the divisions sheet
+try { const r = JSON.parse(localStorage.getItem(KEY + "-rebuilt")); const ip = linkParts(INDEX_SHEET);
+  if (r && r.found && ip && r.index === ip.id + ":" + ip.gid) discovered = r.found; } catch (e) {}
 const baseDivisions = () => listCache || (listCache = buildList());
 
 const sameTab = (a, b) => { const x = linkParts(a), y = linkParts(b); return !!(x && y && x.id === y.id && x.gid === y.gid); };
@@ -968,6 +972,7 @@ async function updateDivisionList() {
     const found = await discoverDivisions((done, total) => { discovery = { done, total }; if (setup) renderListStatus(); });
     if (!found.divs.length) throw new Error("none of the index's tabs could be read");
     discovered = found; discoveryError = "";
+    try { const ip = linkParts(INDEX_SHEET); localStorage.setItem(KEY + "-rebuilt", JSON.stringify({ index: ip.id + ":" + ip.gid, found })); } catch (e) {}
     try { localStorage.removeItem(KEY + "-backoff"); } catch (e) {}
   } catch (e) {
     discoveryError = discoveryHelp(e.message, e.status);
@@ -1761,13 +1766,17 @@ function renderListStatus() {
   const f = discovered.failed || [];
   let body = `<p>${fromSheet ? `The division list comes from your divisions sheet (${baseDivisions().length} divisions).`
       : "Your divisions sheet couldn't be read or is empty, so the saved list is showing."}
-    To fill the sheet from the NCHVC index, copy the rows below and paste them into cell A1 of the sheet, replacing what's there.
-    Rows already in the sheet keep their name and Show; tabs the viewer can't read yet come in with Show = No.</p>
+    The site only uses the divisions sheet, so rows built here change nothing until they're pasted into it:</p>
+    <ol style="margin:0 0 12px;padding-left:22px;line-height:1.6">
+      <li>Tap <strong>Copy rows</strong>.</li>
+      <li>Open ${/^https:\/\/docs\.google\.com\//.test(CONFIG_SHEET) ? `<a href="${esc(CONFIG_SHEET)}" target="_blank" rel="noopener">your divisions sheet ↗</a>` : "your divisions sheet"}, click cell <strong>A1</strong> and paste, replacing what's there.</li>
+      <li>Come back and tap <strong>Refresh</strong>.</li></ol>
+    <p>Rows already in the sheet keep their name and Show; tabs the viewer can't read yet come in with Show = No.</p>
     <p><textarea id="sheetRows" readonly rows="8" style="width:100%;font:13px/1.4 ui-monospace,Menlo,monospace;border:1px solid var(--line);border-radius:8px;padding:8px;white-space:pre;overflow:auto">${esc(sheetRows(discovered))}</textarea></p>
     <p class="row"><button class="refresh" type="button" id="copyRows">Copy rows</button>
       ${API_KEY ? (discovery ? `<span><strong>Reading the index…</strong> ${discovery.total ? `checked ${discovery.done} of ${discovery.total} tabs` : ""}</span>`
         : `<button class="ghost" type="button" id="updateList" ${wait ? "disabled" : ""}>Build rows from the NCHVC index</button>`) : ""}</p>
-    <p style="color:var(--muted);font-size:14px">${discovered === SAVED_LIST ? `These rows come from the saved index discovery (${esc(when(discovered.at))}).` : `Rebuilt from the NCHVC index ${esc(when(discovered.at))}.`}
+    <p style="color:var(--muted);font-size:14px">${discovered === SAVED_LIST ? `These rows come from the saved index discovery (${esc(when(discovered.at))}).` : `Rebuilt from the NCHVC index ${esc(when(discovered.at))} (kept in this browser).`}
       ${API_KEY ? "Rebuilding uses the Google Sheets API (17 reads) and is only needed if the index changes, such as next year." : ""}
       ${wait ? ` ${paused.hitLimit ? "Google asked us to slow down, so rebuilding" : "After that failure, rebuilding"} is paused for about ${wait} minute${wait === 1 ? "" : "s"}.` : ""}</p>
     ${failure && !discovery ? `<p style="color:var(--bad)">Rebuilding failed: ${esc(failure)}</p>` : ""}
