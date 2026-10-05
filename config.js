@@ -7,8 +7,8 @@ window.VIEWER_CONFIG = {
   // The Home Screen app's name (also set in manifest.webmanifest).
   appName: "Nationals",
 
-  // Where Nationals is played: a directions link in the header (short) and the full address at the
-  // end of the page. 2026: Oct 15-17 (from nchclive.com/home-school-volleyball). Remove it to hide both.
+  // Where Nationals is played: the Location card on the Info tab, with Google Maps and Apple Maps
+  // buttons. 2026: Oct 15-17 (from nchclive.com/home-school-volleyball). Remove it to hide the card.
   venue: {
     name: "AdventHealth Sports Park at Bluhawk",
     short: "Bluhawk",
