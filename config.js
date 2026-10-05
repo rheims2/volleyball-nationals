@@ -16,9 +16,9 @@ window.VIEWER_CONFIG = {
   // Sheets API and to this site's address in Google Cloud Console.
   sheetsApiKey: "AIzaSyBO9bvtoXLMAua2DZyNit1WphNDnh9eGwE",
 
-  // The NCHVC bracket index the division list is built from (still the 2026 Regionals index: replace it with the Nationals index when it's published).
+  // The NCHVC bracket index the division list is built from (the 2025 Nationals index until the 2026 one is published).
   // Change it when a new index is published, then rebuild the rows on the setup page (the viewer's address plus #setup).
-  indexSheet: "https://docs.google.com/spreadsheets/d/1BMqNRKu8dxVG3EzBou6Kv1jYtITo_4baXkJebuHOcbI/edit?gid=760812890#gid=760812890",
+  indexSheet: "https://docs.google.com/spreadsheets/d/1ONzz5XqL-buAxvHXNHfuTRtDayzaM10Cy7KlOdt5GL0/edit?gid=1891963095#gid=1891963095",
 
   // The club the My teams tab starts on (a visitor can pick another; blank starts on "Pick your club").
   defaultClub: "Des Moines Eclipse",
