@@ -49,6 +49,12 @@
   .status-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; max-width: 1100px; margin: 6px auto 0; }
   .status { color: var(--on-dark-muted); font-size: 14px; }
   .status .stale { color: var(--accent-soft); }
+  /* Directions to the venue (config.js venue), at the end of the Updated line */
+  .venue { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--accent-soft); font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .venue:hover, .venue:focus-visible { text-decoration: underline; }
+  .venue svg { flex: none; }
+  .pagefoot .where { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0 0 14px; }
+  .pagefoot .where a { color: var(--accent-deep); font-weight: 600; }
   .refresh {
     font: 700 15px Barlow, sans-serif; background: var(--accent); color: var(--on-accent); border: 0; border-radius: 999px;
     padding: 8px 16px; cursor: pointer; display: inline-flex; gap: 8px; align-items: center; white-space: nowrap; flex: none;
@@ -251,6 +257,7 @@
   </div>
   <div class="status-row">
     <span class="status" id="status" aria-live="polite">Loading results…</span>
+    <a class="venue" id="venueLink" target="_blank" rel="noopener" hidden></a>
   </div>
   <div class="filterbar">
     <div class="filters" id="filters" aria-label="Filters"></div>
@@ -271,7 +278,7 @@
   </div>
 </div>
 <main id="main"></main>
-<footer class="pagefoot"><button class="ghost" id="installBtn" type="button" hidden>Add to Home Screen</button></footer>
+<footer class="pagefoot"><p class="where" id="venueFoot" hidden></p><button class="ghost" id="installBtn" type="button" hidden>Add to Home Screen</button></footer>
 <dialog class="volform" id="volForm" aria-labelledby="volTitle"></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 <div class="install" id="install" role="dialog" aria-labelledby="installTitle" hidden>
@@ -1976,6 +1983,19 @@ let installEvent = null;
 const APP_NAME = VIEWER_CONFIG.appName || "Regionals";
 document.querySelector('meta[name="apple-mobile-web-app-title"]').content = (SITE_LABEL ? SITE_LABEL + " " : "") + APP_NAME;
 $("installTitle").textContent = `Add ${APP_NAME} to your Home Screen`;
+/* config.js venue: { name, short, address } puts a directions link in the header (short name) and the
+   full name and address at the end of the page. iPhones open Apple Maps, everything else Google Maps. */
+const VENUE = VIEWER_CONFIG.venue || null;
+if (VENUE && (VENUE.address || VENUE.name)) {
+  const q = [VENUE.name, VENUE.address].filter(Boolean).join(", ");
+  const maps = IS_IOS ? "https://maps.apple.com/?q=" + encodeURIComponent(q) : "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
+  const pin = `<svg width="13" height="16" viewBox="0 0 13 16" aria-hidden="true"><path fill="currentColor" d="M6.5 0A6.5 6.5 0 0 0 0 6.5C0 11 6.5 16 6.5 16S13 11 13 6.5A6.5 6.5 0 0 0 6.5 0Zm0 9a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Z"/></svg>`;
+  const a = $("venueLink"); a.href = maps; a.hidden = false;
+  a.innerHTML = `${pin}<span>${esc(VENUE.short || VENUE.name || "Directions")}</span>`;
+  a.setAttribute("aria-label", `Directions to ${VENUE.name || VENUE.short} (opens Maps)`);
+  const f = $("venueFoot"); f.hidden = false;
+  f.innerHTML = `${esc(VENUE.name || "")}${VENUE.name && VENUE.address ? "<br>" : ""}${esc(VENUE.address || "")}<br><a href="${esc(maps)}" target="_blank" rel="noopener">Directions ↗</a>`;
+}
 function installHow() {
   if (IS_IOS) return IN_APP
     ? "Open this page in Safari first (this app's <b>•••</b> menu, then <b>Open in browser</b>). Then tap Share and <b>Add to Home Screen</b>."

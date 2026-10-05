@@ -7,6 +7,14 @@ window.VIEWER_CONFIG = {
   // The Home Screen app's name (also set in manifest.webmanifest).
   appName: "Nationals",
 
+  // Where Nationals is played: a directions link in the header (short) and the full address at the
+  // end of the page. 2026: Oct 15-17 (from nchclive.com/home-school-volleyball). Remove it to hide both.
+  venue: {
+    name: "AdventHealth Sports Park at Bluhawk",
+    short: "Bluhawk",
+    address: "16201 Shawnee Dr, Overland Park, KS 66223"
+  },
+
   // Your divisions Google Sheet: renames, hides (Show = No) or adds divisions.
   // The Nationals divisions sheet (not the Regionals one, which the Regionals site reads).
   divisionsSheet: "https://docs.google.com/spreadsheets/d/1MTToTWDy3GxF_ThS9EnPtSnV5ijNjKha5nuX1_JMjxc/edit?usp=sharing",
