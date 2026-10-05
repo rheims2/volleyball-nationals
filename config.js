@@ -1,6 +1,14 @@
 // Settings for the NCHVC results viewer.
 window.VIEWER_CONFIG = {
+  // This is the Nationals copy of the viewer (https://rheims2.github.io/volleyball-nationals/).
+  // Its own storage key keeps saved settings apart from the Regionals site (same rheims2.github.io storage).
+  storageKey: "nchvc-nationals-viewer-v2",
+
+  // The Home Screen app's name (also set in manifest.webmanifest).
+  appName: "Nationals",
+
   // Your divisions Google Sheet: renames, hides (Show = No) or adds divisions.
+  // Still the Regionals sheet: replace it with a Nationals divisions sheet before Nationals.
   divisionsSheet: "https://docs.google.com/spreadsheets/d/1RtIsoomRwrn-kGPWbcSdB3gV0ZGjVJMQCpMT71Y70DI/edit?usp=sharing",
 
   // Google Sheets API key, used only to build the division list from the NCHVC
@@ -8,18 +16,18 @@ window.VIEWER_CONFIG = {
   // Sheets API and to this site's address in Google Cloud Console.
   sheetsApiKey: "AIzaSyBO9bvtoXLMAua2DZyNit1WphNDnh9eGwE",
 
-  // The NCHVC bracket index the division list is built from (now the 2026 Regionals index).
+  // The NCHVC bracket index the division list is built from (still the 2026 Regionals index: replace it with the Nationals index when it's published).
   // Change it when a new index is published, then rebuild the rows on the setup page (the viewer's address plus #setup).
   indexSheet: "https://docs.google.com/spreadsheets/d/1BMqNRKu8dxVG3EzBou6Kv1jYtITo_4baXkJebuHOcbI/edit?gid=760812890#gid=760812890",
 
   // The club the My teams tab starts on (a visitor can pick another; blank starts on "Pick your club").
   defaultClub: "Des Moines Eclipse",
 
-  // The club's volunteer sign-up sheet, linked as "Volunteer sign-up" in the header.
-  // Leave it blank ("") to hide the link.
-  volunteerSheet: "https://docs.google.com/spreadsheets/d/1sbBL62yQiCZQ3fAJvgpHHUpHhhvtCe0b9sJsamEXpws/edit?usp=drive_link",
+  // The club's volunteer sign-up sheet for Nationals, read for the Volunteer buttons on each game.
+  // Blank ("") until there is one, so no Volunteer buttons show (the Regionals sheet isn't used here).
+  volunteerSheet: "",
 
   // The volunteer sheet's Apps Script web app (see volunteer-script.gs), which saves sign-ups made on
   // the page. Leave it blank ("") and the Volunteer buttons only show the spots and link to the sheet.
-  volunteerScript: "https://script.google.com/macros/s/AKfycbz8AhAyUoXNVI3Pgo0Q5ocx42eD8JweZYt1wESdjvXZlLZiQOOAhz_3D1kcLSXNbZl8rg/exec"
+  volunteerScript: ""
 };

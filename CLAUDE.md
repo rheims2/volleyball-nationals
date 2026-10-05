@@ -1,3 +1,15 @@
+# NATIONALS COPY of the NCHVC Results Viewer
+
+This repository, `rheims2/volleyball-nationals`, is the Nationals copy of `rheims2/volleyball` (the Regionals viewer), published at https://rheims2.github.io/volleyball-nationals/. It was copied from the Regionals site on 2026-10-05.
+
+- `config.js` here sets `storageKey: "nchvc-nationals-viewer-v2"` (saved settings kept apart from the Regionals site's, since both are under rheims2.github.io) and `appName: "Nationals"`. `manifest.webmanifest` says "Nationals". Keep them.
+- Until Nationals is set up, `divisionsSheet` and `indexSheet` still point at the Regionals sheets, so the page shows the Regionals results. Before Nationals: make a Nationals divisions sheet (a copy of the Regionals one) and put its link in `divisionsSheet`, put the Nationals bracket index in `indexSheet`, open the setup page (address plus `#setup`), "Build rows from the NCHVC index", and paste the rows into the new sheet. Don't edit the Regionals divisions sheet for Nationals: the Regionals site reads it too.
+- `volunteerSheet` and `volunteerScript` are blank (no Volunteer buttons) until there's a Nationals volunteer sheet with `volunteer-script.gs` deployed on it.
+- The API key only accepts https://rheims2.github.io/volleyball/* unless https://rheims2.github.io/volleyball-nationals/* is added in Google Cloud Console; only "Build rows from the NCHVC index" needs it.
+- `index.html` is the same file as in `rheims2/volleyball`; changes move between the repositories by copying it.
+
+The rest of this file is the Regionals viewer's documentation, which applies here too.
+
 # NCHVC Results Viewer
 
 A single-page viewer for NCHVC volleyball pool play and bracket play results (now the 2026 Heartland Regionals). The tournament keeps results in Google Sheets that we have **view-only** access to; this page reads them live and shows them in a simpler, phone-friendly layout. Hosted on GitHub Pages from this repository.
@@ -9,12 +21,13 @@ A single-page viewer for NCHVC volleyball pool play and bracket play results (no
   - `divisionsSheet`: link to the user's divisions Google Sheet, the division list.
   - `sheetsApiKey`: Google Sheets API key, used only for division discovery. It's public by design, so it's restricted in Google Cloud Console to the Sheets API and the referrer `https://rheims2.github.io/volleyball/*`. Never put it in `index.html`.
   - `indexSheet`: the NCHVC bracket index the division list is built from. Now the 2026 Regionals index ("Bracket Index - Regionals - 2026 NCHVC", tab "Regionals Index", gid 760812890), which is also `index.html`'s default.
-  - `storageKey`, `siteLabel` (optional, test copy only): the test copy `rheims2/volleyball-test` (https://rheims2.github.io/volleyball-test/) sets `storageKey: "nchvc-test-viewer-v2"` so its saved settings don't mix with the live site's (both are under rheims2.github.io), and `siteLabel: "TEST"`, shown as a red tag before the event line and in the page title. Leave both unset here. `index.html` is identical in both repositories, so a change tried on the test copy moves over by copying `index.html` alone.
+  - `storageKey`, `siteLabel` (optional, test copy only): the test copy `rheims2/volleyball-test` (https://rheims2.github.io/volleyball-test/) sets `storageKey: "nchvc-test-viewer-v2"` so its saved settings don't mix with the live site's (both are under rheims2.github.io), and `siteLabel: "TEST"`, shown as a red tag before the event line and in the page title. Leave both unset here. `index.html` is identical in all three repositories (this one, the test copy and the Nationals copy `rheims2/volleyball-nationals`, https://rheims2.github.io/volleyball-nationals/, which sets `storageKey: "nchvc-nationals-viewer-v2"`), so a change moves over by copying `index.html` alone.
+  - `appName`: the Home Screen app's name, set at load on the `apple-mobile-web-app-title` tag and in the "Add … to your Home Screen" card. Unset means "Regionals"; the Nationals copy sets "Nationals".
   - `volunteerSheet`: the club's volunteer sign-up sheet ("Eclipse - NCHVC Heartland Regionals - Volunteers"), read for the Volunteer buttons on each game (below). The header's "Volunteer sign-up" link to it was taken out.
   - `volunteerScript`: the volunteer sheet's Apps Script web app URL, which saves sign-ups from the Volunteer form (below). Blank shows the spots with a link to the sheet.
   - `defaultClub`: the club the My teams tab starts on ("Des Moines Eclipse") until a visitor picks one; a visitor's own choice, including "Pick your club…", is saved and wins. Blank starts on "Pick your club".
 - `volunteer-script.gs`: the Apps Script pasted into the volunteer sheet (Extensions > Apps Script, deployed as a web app) that saves sign-ups; its URL goes in `volunteerScript`.
-- `manifest.webmanifest`, `icons/`: the Home Screen app. Name "Regionals" (also the `apple-mobile-web-app-title` tag in `index.html`), near-black background, full-screen (`standalone`) launch. `icons/icon.svg` is the source (a volleyball in a red ring on Eclipse black, inside the middle 80% so Android's masks don't clip it); `apple-touch-icon.png` (180), `icon-192.png` and `icon-512.png` are rendered from it. The test copy's manifest says "TEST Regionals", so copy `index.html` and `icons/` over but not the manifest.
+- `manifest.webmanifest`, `icons/`: the Home Screen app. Name "Regionals" (also `appName` in `config.js`, which sets the `apple-mobile-web-app-title` tag), near-black background, full-screen (`standalone`) launch. `icons/icon.svg` is the source (a volleyball in a red ring on Eclipse black, inside the middle 80% so Android's masks don't clip it); `apple-touch-icon.png` (180), `icon-192.png` and `icon-512.png` are rendered from it. The test copy's manifest says "TEST Regionals", so copy `index.html` and `icons/` over but not the manifest.
 
 ## How data is loaded
 

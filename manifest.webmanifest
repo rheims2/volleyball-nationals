@@ -1,7 +1,7 @@
 {
-  "name": "Regionals",
-  "short_name": "Regionals",
-  "description": "NCHVC Heartland Regionals pool and bracket results",
+  "name": "Nationals",
+  "short_name": "Nationals",
+  "description": "NCHVC Nationals pool and bracket results",
   "id": "./",
   "start_url": "./",
   "scope": "./",
