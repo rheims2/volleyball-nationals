@@ -12,8 +12,14 @@ window.VIEWER_CONFIG = {
   venue: {
     name: "AdventHealth Sports Park at Bluhawk",
     short: "Bluhawk",
-    address: "16201 Shawnee Dr, Overland Park, KS 66223"
+    address: "16201 Shawnee Dr, Overland Park, KS 66223",
+    dates: "October 15–17, 2026"
   },
+
+  // The Info tab's sheet: a tab (in the divisions sheet is fine) with a header row
+  // Section | Text | Link | Link text | Image, for rules, play format, the court layout and so on.
+  // Link it with #gid= so the right tab is read. Blank shows only the location.
+  infoSheet: "",
 
   // Your divisions Google Sheet: renames, hides (Show = No) or adds divisions.
   // The Nationals divisions sheet (not the Regionals one, which the Regionals site reads).

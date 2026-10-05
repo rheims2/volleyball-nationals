@@ -53,6 +53,18 @@
   .venue { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--accent-soft); font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; }
   .venue:hover, .venue:focus-visible { text-decoration: underline; }
   .venue svg { flex: none; }
+  /* Info tab: the venue card, then the sections from the Info sheet */
+  .info { max-width: 760px; }
+  .info section { background: var(--card, #fff); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 0 0 16px; }
+  .info h2 { font: 700 22px "Barlow Condensed", sans-serif; margin: 0 0 8px; }
+  .info p { margin: 0 0 10px; line-height: 1.5; }
+  .info ul { margin: 0 0 10px; padding-left: 22px; line-height: 1.5; }
+  .info .addr { font-size: 17px; }
+  .info .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .info .btns a { text-decoration: none; display: inline-block; padding: 10px 18px; font-size: 17px; line-height: 1.2; }
+  .info figure { margin: 4px 0 10px; }
+  .info img { display: block; max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
+  .info figcaption { color: var(--muted); font-size: 13px; margin-top: 4px; }
   .pagefoot .where { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0 0 14px; }
   .pagefoot .where a { color: var(--accent-deep); font-weight: 600; }
   .refresh {
@@ -265,6 +277,7 @@
       <button type="button" data-stage="club">My teams</button>
       <button type="button" data-stage="pools">Pool play</button>
       <button type="button" data-stage="brackets">Bracket play</button>
+      <button type="button" data-stage="info">Info</button>
     </div>
   </div>
   <div class="divs" id="divs" aria-label="Divisions"></div>
@@ -302,6 +315,10 @@
 ------------------------------------------------------------------- */
 const VIEWER_CONFIG = window.VIEWER_CONFIG || {};
 const CONFIG_SHEET = VIEWER_CONFIG.divisionsSheet || "";
+// The Info tab's sheet (config.js infoSheet): a tab with Section, Text, Link, Link text and Image columns
+const INFO_SHEET = VIEWER_CONFIG.infoSheet || "";
+// Where the event is played (config.js venue: { name, short, address, dates })
+const VENUE = VIEWER_CONFIG.venue || null;
 /* Division discovery reads the official NCHVC bracket index through the
    Google Sheets API (the public feeds don't include link addresses). The API key
    lives in config.js as sheetsApiKey. Scores never use the API. */
@@ -1291,6 +1308,80 @@ function clubIndex() {
   return { teams, games };
 }
 
+/* ---------------- Info tab ---------------- */
+/* The venue (config.js venue) with map buttons, then sections read from the Info sheet
+   (config.js infoSheet), so rules, play format and the court layout can be changed in the
+   sheet during the event. One row per paragraph: Section (blank = same as the row above),
+   Text (lines starting "-" or "•" become a list), Link (+ Link text) and Image (a picture
+   link; a Google Drive file shared "Anyone with the link" shows as the picture). The last
+   good copy is kept in this browser so the tab opens at once. */
+const info = (() => { try { return JSON.parse(localStorage.getItem(KEY + "-info")) || {}; } catch (e) { return {}; } })();
+info.busy = false; info.error = false;
+async function loadInfo(force) {
+  const parts = linkParts(INFO_SHEET);
+  if (!parts || info.busy || (!force && info.at && Date.now() - info.at < 60000)) { if (currentStage() === "info") render(); return; }
+  info.busy = true; busy(true);
+  try {
+    const rows = await fetchRows(parts);
+    const h = rows.findIndex(r => r.some(v => /^section$/i.test(String(v).trim())));
+    if (h < 0) throw new Error("no Section column");
+    const head = rows[h].map(v => String(v).trim().toLowerCase()), col = n => head.indexOf(n);
+    const c = { section: col("section"), text: col("text"), link: col("link"), label: col("link text"), image: col("image") };
+    const cell = (r, i) => i >= 0 ? String(r[i] || "").trim() : "";
+    let last = "";
+    info.rows = rows.slice(h + 1).map(r => {
+      const sec = cell(r, c.section) || last; last = sec;
+      return { section: sec, text: cell(r, c.text), link: cell(r, c.link), label: cell(r, c.label), image: cell(r, c.image) };
+    }).filter(r => r.text || r.link || r.image);
+    info.at = Date.now(); info.error = false;
+    try { localStorage.setItem(KEY + "-info", JSON.stringify({ rows: info.rows, at: info.at })); } catch (e) {}
+  } catch (e) { info.error = true; }
+  info.busy = false; busy(false);
+  if (currentStage() === "info") render();
+}
+const safeUrl = u => /^https?:\/\//i.test(u) ? u : "";
+// A Google Drive file link shows through Drive's thumbnail address (the file must be shared "Anyone with the link")
+function imageSrc(u) {
+  const m = u.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:[^#]*&)?id=)([\w-]{20,})/);
+  return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w2000` : safeUrl(u);
+}
+function infoText(t) {
+  const out = []; let list = [];
+  const flush = () => { if (list.length) out.push(`<ul>${list.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`); list = []; };
+  t.split(/\n/).forEach(line => {
+    const m = line.match(/^\s*[-•*]\s+(.*)/);
+    if (m) list.push(m[1]); else { flush(); if (line.trim()) out.push(`<p>${esc(line.trim())}</p>`); }
+  });
+  flush(); return out.join("");
+}
+function renderInfo() {
+  $("bar").hidden = true;
+  $("title").textContent = "Info";
+  document.title = (SITE_LABEL ? SITE_LABEL + " · " : "") + "Info";
+  $("eventLine").textContent = eventName();
+  busy(info.busy);
+  let html = "";
+  if (VENUE && (VENUE.name || VENUE.address)) {
+    const q = encodeURIComponent([VENUE.name, VENUE.address].filter(Boolean).join(", "));
+    html += `<section><h2>Location</h2><p class="addr">${VENUE.name ? `<strong>${esc(VENUE.name)}</strong><br>` : ""}${esc(VENUE.address || "")}</p>
+      ${VENUE.dates ? `<p>${esc(VENUE.dates)}</p>` : ""}
+      <div class="btns"><a class="refresh" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">Google Maps ↗</a>
+      <a class="ghost" href="https://maps.apple.com/?q=${q}" target="_blank" rel="noopener">Apple Maps ↗</a></div></section>`;
+  }
+  const sections = [];
+  (info.rows || []).forEach(r => { let sec = sections.find(x => x.name === r.section); if (!sec) sections.push(sec = { name: r.section, rows: [] }); sec.rows.push(r); });
+  html += sections.map(sec => `<section>${sec.name ? `<h2>${esc(sec.name)}</h2>` : ""}${sec.rows.map(r => {
+    const img = r.image && imageSrc(r.image), link = safeUrl(r.link), open = safeUrl(r.image);
+    return (r.text ? infoText(r.text) : "")
+      + (img ? `<figure><a href="${esc(open || img)}" target="_blank" rel="noopener"><img src="${esc(img)}" alt="${esc(r.text || sec.name || "Picture")}" loading="lazy"></a><figcaption>Tap the picture to open it full size.</figcaption></figure>` : "")
+      + (link ? `<div class="btns"><a class="ghost" href="${esc(link)}" target="_blank" rel="noopener">${esc(r.label || "Open " + (sec.name || "link"))} ↗</a></div>` : "");
+  }).join("")}</section>`).join("");
+  if (!sections.length) html += `<div class="msg"><p>${info.error ? "The information sheet couldn't be read right now. Tap Refresh to try again."
+    : INFO_SHEET && info.busy ? "Loading…" : "Rules, play format and the court layout will be posted here."}</p></div>`;
+  $("main").innerHTML = `<div class="info">${html}</div>`;
+  $("venueFoot").hidden = true;   // the Location card already shows it
+}
+
 function renderClub() {
   $("bar").hidden = true;
   $("title").textContent = "My teams";
@@ -1372,7 +1463,8 @@ function busy(on) {
 }
 
 function updateStatus() {
-  const s = currentStage() === "club" && !setup ? { lastUpdated: club.lastUpdated, error: club.failed.length && !club.lastUpdated } : slot(current().id);
+  const s = currentStage() === "club" && !setup ? { lastUpdated: club.lastUpdated, error: club.failed.length && !club.lastUpdated }
+    : currentStage() === "info" && !setup ? { lastUpdated: info.at ? new Date(info.at) : (INFO_SHEET ? null : new Date()), error: info.error } : slot(current().id);
   if (!s.lastUpdated) { $("status").textContent = s.error ? "Couldn't load results" : "Loading results…"; return; }
   const mins = Math.floor((Date.now() - s.lastUpdated) / 60000);
   const time = s.lastUpdated.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -1675,8 +1767,10 @@ function render() {
   $("siteLabel").hidden = !SITE_LABEL; $("siteLabel").textContent = SITE_LABEL;
   $("eventLine").textContent = eventName() + (d.type === "brackets" ? " bracket play" : " pool play");
   renderDivisions(); updateStatus(); busy(s.busy);
+  $("venueFoot").hidden = !(VENUE && (VENUE.name || VENUE.address));
   if (setup) { $("bar").hidden = true; return renderSetup(); }
   if (currentStage() === "club") return renderClub();
+  if (currentStage() === "info") return renderInfo();
   if (d.id === "__none") {
     $("bar").hidden = true; $("status").textContent = "";
     $("eventLine").textContent = eventName();
@@ -1905,17 +1999,18 @@ function renderSetup() {
 }
 
 /* ---------------- wiring ---------------- */
-$("refreshBtn").addEventListener("click", async () => { await loadConfig(); render(); loadVolunteers(true); if (currentStage() === "club") loadClub(true); else refresh(); });
+$("refreshBtn").addEventListener("click", async () => { await loadConfig(); render(); loadVolunteers(true); if (currentStage() === "club") loadClub(true); else if (currentStage() === "info") loadInfo(true); else refresh(); });
 $("stages").addEventListener("click", e => {
   const b = e.target.closest("button[data-stage]"); if (!b || b.dataset.stage === currentStage() && !setup) return;
   settings.lastByStage = { ...(settings.lastByStage || {}), [currentStage()]: current().id };
   settings.stage = b.dataset.stage;
   // Opens on the division with one of the teams picked on My teams, if there is one
   settings.division = divisionFor(settings.stage, (settings.lastByStage || {})[settings.stage]);
-  pendingFocus = settings.stage !== "club" && (settings.clubTeams || []).length && visibleDivisions(settings.stage).some(d => !slot(d.id).model) ? settings.stage : "";
-  if (settings.stage !== "club") focusMine(current());
+  pendingFocus = !["club", "info"].includes(settings.stage) && (settings.clubTeams || []).length && visibleDivisions(settings.stage).some(d => !slot(d.id).model) ? settings.stage : "";
+  if (!["club", "info"].includes(settings.stage)) focusMine(current());
   leaveSetup(); flashKeys = new Set(); save(); render();
   if (settings.stage === "club") return loadClub(false);
+  if (settings.stage === "info") return loadInfo(false);
   const s = slot(current().id);
   if (!s.lastUpdated || Date.now() - s.lastUpdated > 30000) refresh();
 });
@@ -1985,7 +2080,6 @@ document.querySelector('meta[name="apple-mobile-web-app-title"]').content = (SIT
 $("installTitle").textContent = `Add ${APP_NAME} to your Home Screen`;
 /* config.js venue: { name, short, address } puts a directions link in the header (short name) and the
    full name and address at the end of the page. iPhones open Apple Maps, everything else Google Maps. */
-const VENUE = VIEWER_CONFIG.venue || null;
 if (VENUE && (VENUE.address || VENUE.name)) {
   const q = [VENUE.name, VENUE.address].filter(Boolean).join(", ");
   const maps = IS_IOS ? "https://maps.apple.com/?q=" + encodeURIComponent(q) : "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
@@ -2029,7 +2123,7 @@ render();
   const config = loadConfig();
   if (!configDivs) await config;
   loadVolunteers(true);
-  const load = () => currentStage() === "club" ? loadClub(false) : refresh();
+  const load = () => currentStage() === "club" ? loadClub(false) : currentStage() === "info" ? loadInfo(false) : refresh();
   const first = load();
   await config;
   restoreTabs(); render();
