@@ -95,6 +95,9 @@
   .club-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; margin-bottom: 16px; position: relative; }
   .club-controls select { font: 500 15px Barlow, sans-serif; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); max-width: 100%; }
   .teampick { position: static; }
+  /* My teams: day-and-time order, earliest or latest first */
+  .sortbtn { font: 600 15px Barlow, sans-serif; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; white-space: nowrap; }
+  .sortbtn .arrow { color: var(--accent-deep); margin-left: 4px; }
   .teampick summary { list-style: none; cursor: pointer; font: 600 15px Barlow, sans-serif; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
   .teampick summary::-webkit-details-marker { display: none; }
   .teampick summary::after { content: "▾"; margin-left: 8px; color: var(--muted); }
@@ -430,7 +433,9 @@ function parsePools(rows) {
           let a = "", b = "";
           for (let k = vs - 1; k > c + 2 && !a; k--) a = real(row[k]);
           for (let k = vs + 1; k < row.length && !b; k++) b = real(row[k]);
-          pool.matches.push({ num: v.replace(/\D+/g, ""), court: at(r, c + 1), time: at(r, c + 2), a, b, day });
+          // Some tabs put the day in the time cell ("FRI 10:00 AM", 2025 Nationals Iron pools, whose "Days:" header is "F/S")
+          const dt = at(r, c + 2).match(/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s+(.+)$/i);
+          pool.matches.push({ num: v.replace(/\D+/g, ""), court: at(r, c + 1), time: dt ? dt[2] : at(r, c + 2), a, b, day: dt ? dt[1] : day });
           break;
         }
         if (v === "Seed" && !seed) { seed = { r, c }; break; }
@@ -1389,6 +1394,8 @@ function renderClub() {
   // No teams are picked until they're chosen in the list
   const picked = new Set(settings.clubTeamsFor === cur && settings.clubTeams ? settings.clubTeams.filter(id => mine.some(t => t.id === id)) : []);
   const label = t => t.age + (t.suffix ? ` – ${t.suffix}` : "");
+  // Day-and-time order (settings.clubSort): earliest first, or latest first
+  const latestFirst = settings.clubSort === "desc";
   const summary = !mine.length ? "No teams" : !picked.size ? "Pick your teams" : picked.size === mine.length ? `All teams (${mine.length})` : picked.size <= 2 ? mine.filter(t => picked.has(t.id)).map(label).join(", ") : `${picked.size} of ${mine.length} teams`;
 
   let html = notices();
@@ -1398,6 +1405,7 @@ function renderClub() {
     ${cur ? `<details class="teampick" id="teamPick" ${teamPickOpen ? "open" : ""}><summary>${esc(summary)}</summary><div class="teamlist">${
       mine.map(t => `<label><input type="checkbox" data-team="${esc(t.id)}" ${picked.has(t.id) ? "checked" : ""}> ${esc(label(t))}</label>`).join("")}
       <div class="row"><button type="button" class="ghost" id="teamsAll">All</button><button type="button" class="ghost" id="teamsNone">None</button><button type="button" class="refresh" id="teamsDone">Done</button></div></div></details>` : ""}
+    ${cur && picked.size ? `<button type="button" class="sortbtn" id="clubSort" aria-label="Sorted by day and time, ${latestFirst ? "latest" : "earliest"} first. Tap to show ${latestFirst ? "earliest" : "latest"} first.">${latestFirst ? "Latest first" : "Earliest first"}<span class="arrow" aria-hidden="true">${latestFirst ? "↑" : "↓"}</span></button>` : ""}
   </div>`;
   if (club.busy) html += `<p class="note" id="clubProgress" style="padding:0">${club.verb} divisions… ${club.done} of ${club.total}</p>`;
   if (club.failed.length) html += `<div class="msg err"><p>Couldn't load: ${esc(club.failed.join(", "))}.</p></div>`;
@@ -1408,9 +1416,9 @@ function renderClub() {
     const ours = new Set([...picked]);
     const list = games.filter(g => g.ids.some(id => ours.has(id)))
       .sort((x, y) => (DAYS[dayKey(x.day)] || 9) - (DAYS[dayKey(y.day)] || 9) || (x.start ?? 9999) - (y.start ?? 9999) || x.where.localeCompare(y.where));
-    const next = list.find(g => !g.played && g.a && g.b);
+    const next = list.find(g => !g.played && g.a && g.b);   // from the earliest-first order either way
     let lastDay = null;
-    const items = list.map(g => {
+    const items = (latestFirst ? [...list].reverse() : list).map(g => {
       let head = "";
       const dk = dayKey(g.day);
       if (dk !== lastDay) { head = `${lastDay !== null ? "</ol></section>" : ""}<h3 class="dayhead">${esc(DAY_NAMES[dk] || "Day to be set")}</h3><section class="card"><ol class="matches">`; lastDay = dk; }
@@ -1447,6 +1455,8 @@ function renderClub() {
     $("teamsNone").addEventListener("click", () => setTeams([]));
     $("teamsDone").addEventListener("click", () => { teamPickOpen = false; pick.open = false; });
   }
+  const sortBtn = $("clubSort");
+  if (sortBtn) sortBtn.addEventListener("click", () => { settings.clubSort = latestFirst ? "asc" : "desc"; save(); render(); });
 }
 
 function busy(on) {
@@ -1728,7 +1738,7 @@ document.addEventListener("click", e => {
 
 /* ---------------- rendering ---------------- */
 // Courts read "Court 7", whatever the venue name before the number ("New Century FH #7", "Sports Pavilion #3")
-const courtLabel = c => String(c || "").trim().replace(/^.*?#\s*(\d+)\s*$/, "Court $1").replace(/^Sports Pavilion\s*/i, "Court ");
+const courtLabel = c => String(c || "").trim().replace(/^.*?#\s*(\d+[A-Za-z]?)\s*$/, "Court $1").replace(/^Sports Pavilion\s*/i, "Court ");
 const esc = v => String(v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const signed = n => n > 0 ? "+" + n : n < 0 ? "−" + Math.abs(n) : "0";
 
