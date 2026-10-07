@@ -54,6 +54,7 @@
   .info section { background: var(--card, #fff); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 0 0 16px; }
   .info h2 { font: 700 22px "Barlow Condensed", sans-serif; margin: 0 0 8px; }
   .info p { margin: 0 0 10px; line-height: 1.5; }
+  .info h3 { font: 700 18px "Barlow Condensed", sans-serif; margin: 14px 0 4px; color: var(--accent-deep); }
   .info ul { margin: 0 0 10px; padding-left: 22px; line-height: 1.5; }
   .info .addr { font-size: 17px; }
   .info .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
@@ -1340,7 +1341,8 @@ async function loadInfo(force) {
   info.busy = false; busy(false);
   if (currentStage() === "info") render();
 }
-const safeUrl = u => /^https?:\/\//i.test(u) ? u : "";
+// http(s) links, or a picture stored with the site itself ("court-layout.jpg")
+const safeUrl = u => /^https?:\/\//i.test(u) || /^[\w-]+(\/[\w-]+)*\.(png|jpe?g|gif|webp|svg|pdf)$/i.test(u) ? u : "";
 // A Google Drive file link shows through Drive's thumbnail address (the file must be shared "Anyone with the link")
 function imageSrc(u) {
   const m = u.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:[^#]*&)?id=)([\w-]{20,})/);
@@ -1351,7 +1353,8 @@ function infoText(t) {
   const flush = () => { if (list.length) out.push(`<ul>${list.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`); list = []; };
   t.split(/\n/).forEach(line => {
     const m = line.match(/^\s*[-•*]\s+(.*)/);
-    if (m) list.push(m[1]); else { flush(); if (line.trim()) out.push(`<p>${esc(line.trim())}</p>`); }
+    const hd = line.match(/^\s*#+\s+(.*)/);   // "# Thursday" is a small heading
+    if (m) list.push(m[1]); else { flush(); if (hd) out.push(`<h3>${esc(hd[1])}</h3>`); else if (line.trim()) out.push(`<p>${esc(line.trim())}</p>`); }
   });
   flush(); return out.join("");
 }
@@ -1371,6 +1374,11 @@ function renderInfo() {
   }
   const sections = [];
   (info.rows || []).forEach(r => { let sec = sections.find(x => x.name === r.section); if (!sec) sections.push(sec = { name: r.section, rows: [] }); sec.rows.push(r); });
+  // Rows with only text run together, so a bullet list can take one row per line
+  sections.forEach(sec => { sec.rows = sec.rows.reduce((out, r) => {
+    const prev = out[out.length - 1];
+    if (prev && !prev.image && !prev.link && !r.image && !r.link && r.text) prev.text += "\n" + r.text; else out.push({ ...r });
+    return out; }, []); });
   html += sections.map(sec => `<section>${sec.name ? `<h2>${esc(sec.name)}</h2>` : ""}${sec.rows.map(r => {
     const img = r.image && imageSrc(r.image), link = safeUrl(r.link), open = safeUrl(r.image);
     return (r.text ? infoText(r.text) : "")
@@ -1481,7 +1489,8 @@ function updateStatus() {
    the previous match on the same court (its listed time, or its own estimate), or after
    the previous match in the pool when there's no court. Returns the estimates (minutes
    after midnight) by match, null where the sheet gives a time. */
-const MATCH_MINUTES = 45;
+// Minutes a rolling match takes (config.js matchMinutes; the 2026 Nationals schedule rolls at 55)
+const MATCH_MINUTES = +VIEWER_CONFIG.matchMinutes || 45;
 const toMinutes = t => { const x = String(t).match(/(\d{1,2}):(\d{2})\s*([ap])\.?\s*m/i); return x ? (+x[1] % 12 + (/p/i.test(x[3]) ? 12 : 0)) * 60 + +x[2] : null; };
 const clock = n => { const h = Math.floor(n / 60) % 24; return `${h % 12 || 12}:${String(n % 60).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`; };
 function estimateStarts(matches) {
