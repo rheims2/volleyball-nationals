@@ -313,6 +313,8 @@ const VIEWER_CONFIG = window.VIEWER_CONFIG || {};
 const CONFIG_SHEET = VIEWER_CONFIG.divisionsSheet || "";
 // The Info tab's sheet (config.js infoSheet): a tab with Section, Text, Link, Link text and Image columns
 const INFO_SHEET = VIEWER_CONFIG.infoSheet || "";
+// Without infoSheet, the tab named "Info" (config.js infoTab) in the divisions sheet is read by its name
+const INFO_PARTS = linkParts(INFO_SHEET) || (linkParts(CONFIG_SHEET) ? { id: linkParts(CONFIG_SHEET).id, gid: "", sheet: VIEWER_CONFIG.infoTab || "Info" } : null);
 // Where the event is played (config.js venue: { name, short, address, dates })
 const VENUE = VIEWER_CONFIG.venue || null;
 /* Division discovery reads the official NCHVC bracket index through the
@@ -708,7 +710,8 @@ function linkParts(url) {
 
 async function fetchRows(parts) {
   const t = Date.now(), gid = parts.gid ? `&gid=${parts.gid}` : "";
-  const urls = [
+  // A tab can also be read by its name (parts.sheet), which only the gviz feeds understand
+  const urls = parts.sheet && !parts.gid ? [`https://docs.google.com/spreadsheets/d/${parts.id}/gviz/tq?tqx=out:csv&headers=0&sheet=${encodeURIComponent(parts.sheet)}&t=${t}`] : [
     `https://docs.google.com/spreadsheets/d/${parts.id}/export?format=csv${gid}&t=${t}`,
     `https://docs.google.com/spreadsheets/d/${parts.id}/gviz/tq?tqx=out:csv&headers=0${gid}&t=${t}`
   ];
@@ -740,7 +743,7 @@ function loadViaScript(parts) {
       resolve(d.table.rows.map(r => (r.c || []).map(c => c ? String(c.f != null ? c.f : (c.v != null ? c.v : "")).trim() : "")));
     };
     s.onerror = () => { done(); reject(new Error("backup blocked")); };
-    s.src = `https://docs.google.com/spreadsheets/d/${parts.id}/gviz/tq?tqx=out:json;responseHandler:${cb}&headers=0${parts.gid ? "&gid=" + parts.gid : ""}&t=${Date.now()}`;
+    s.src = `https://docs.google.com/spreadsheets/d/${parts.id}/gviz/tq?tqx=out:json;responseHandler:${cb}&headers=0${parts.gid ? "&gid=" + parts.gid : parts.sheet ? "&sheet=" + encodeURIComponent(parts.sheet) : ""}&t=${Date.now()}`;
     document.head.appendChild(s);
   });
 }
@@ -1316,18 +1319,18 @@ function clubIndex() {
 const info = (() => { try { return JSON.parse(localStorage.getItem(KEY + "-info")) || {}; } catch (e) { return {}; } })();
 info.busy = false; info.error = false;
 async function loadInfo(force) {
-  const parts = linkParts(INFO_SHEET);
+  const parts = INFO_PARTS;
   if (!parts || info.busy || (!force && info.at && Date.now() - info.at < 60000)) { if (currentStage() === "info") render(); return; }
   info.busy = true; busy(true);
   try {
     const rows = await fetchRows(parts);
     const h = rows.findIndex(r => r.some(v => /^section$/i.test(String(v).trim())));
-    if (h < 0) throw new Error("no Section column");
-    const head = rows[h].map(v => String(v).trim().toLowerCase()), col = n => head.indexOf(n);
+    // No Section column: the tab isn't set up yet (or, read by name, there's no such tab and Google sent the first one)
+    const head = h < 0 ? [] : rows[h].map(v => String(v).trim().toLowerCase()), col = n => head.indexOf(n);
     const c = { section: col("section"), text: col("text"), link: col("link"), label: col("link text"), image: col("image") };
     const cell = (r, i) => i >= 0 ? String(r[i] || "").trim() : "";
     let last = "";
-    info.rows = rows.slice(h + 1).map(r => {
+    info.rows = h < 0 ? [] : rows.slice(h + 1).map(r => {
       const sec = cell(r, c.section) || last; last = sec;
       return { section: sec, text: cell(r, c.text), link: cell(r, c.link), label: cell(r, c.label), image: cell(r, c.image) };
     }).filter(r => r.text || r.link || r.image);
@@ -1375,7 +1378,7 @@ function renderInfo() {
       + (link ? `<div class="btns"><a class="ghost" href="${esc(link)}" target="_blank" rel="noopener">${esc(r.label || "Open " + (sec.name || "link"))} ↗</a></div>` : "");
   }).join("")}</section>`).join("");
   if (!sections.length) html += `<div class="msg"><p>${info.error ? "The information sheet couldn't be read right now. Tap Refresh to try again."
-    : INFO_SHEET && info.busy ? "Loading…" : "Rules, play format and the court layout will be posted here."}</p></div>`;
+    : INFO_PARTS && info.busy ? "Loading…" : "Rules, play format and the court layout will be posted here."}</p></div>`;
   $("main").innerHTML = `<div class="info">${html}</div>`;
 }
 
@@ -1466,7 +1469,7 @@ function busy(on) {
 
 function updateStatus() {
   const s = currentStage() === "club" && !setup ? { lastUpdated: club.lastUpdated, error: club.failed.length && !club.lastUpdated }
-    : currentStage() === "info" && !setup ? { lastUpdated: info.at ? new Date(info.at) : (INFO_SHEET ? null : new Date()), error: info.error } : slot(current().id);
+    : currentStage() === "info" && !setup ? { lastUpdated: info.at ? new Date(info.at) : (INFO_PARTS ? null : new Date()), error: info.error } : slot(current().id);
   if (!s.lastUpdated) { $("status").textContent = s.error ? "Couldn't load results" : "Loading results…"; return; }
   const mins = Math.floor((Date.now() - s.lastUpdated) / 60000);
   const time = s.lastUpdated.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });

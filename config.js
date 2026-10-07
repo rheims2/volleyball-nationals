@@ -16,9 +16,9 @@ window.VIEWER_CONFIG = {
     dates: "October 15–17, 2026"
   },
 
-  // The Info tab's sheet: a tab (in the divisions sheet is fine) with a header row
+  // The Info tab's content: a tab named "Info" in the divisions sheet, with a header row
   // Section | Text | Link | Link text | Image, for rules, play format, the court layout and so on.
-  // Link it with #gid= so the right tab is read. Blank shows only the location.
+  // It's found by its name; infoTab changes the name, or infoSheet (a link with #gid=) points elsewhere.
   infoSheet: "",
 
   // Your divisions Google Sheet: renames, hides (Show = No) or adds divisions.
