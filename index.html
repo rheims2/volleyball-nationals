@@ -105,6 +105,18 @@
   .whatnext b { font-weight: 600; }
   .whatnext .wn-out { margin-top: 4px; color: var(--muted); }
   .whatnext .wn-when { white-space: nowrap; }
+  .seedlist { list-style: none; margin: 0; padding: 0; }
+  .seedlist li { display: flex; gap: 10px; padding: 7px 16px; border-top: 1px solid var(--line); }
+  .seedlist li:first-child { border-top: 0; }
+  .seedlist li.mine { background: var(--tint); font-weight: 700; }
+  .seedlist .sd { color: var(--muted); min-width: 26px; }
+  .seedlist .team { font-weight: 500; } .seedlist li.mine .team { font-weight: 700; }
+  .seedlist .sd:empty { display: none; }
+  .seednote { color: var(--muted); font-size: 14px; margin: 0; padding: 0 16px 10px; }
+  .seedcard { margin-bottom: 16px; } .seedcard .seedlist li { flex-direction: column; gap: 2px; }
+  .seedcard .seedwhere { color: var(--accent-deep); font-weight: 600; }
+  .seedpools { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-bottom: 14px; }
+  .seedpools .card { margin: 0; }
   .seedtable .scroll { overflow-x: auto; }
   .seedtable td { white-space: nowrap; padding: 6px 10px; }
   .sortbtn .arrow { color: var(--accent-deep); margin-left: 4px; }
@@ -126,7 +138,7 @@
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   @media (max-width: 600px) {
     .stages { order: -1; width: 100%; } .stages button { flex: 1; white-space: nowrap; padding: 5px 6px; font-size: 16px; }
-    .stages.five button { padding: 5px 2px; font-size: 14.5px; letter-spacing: -0.1px; } .stages.five { gap: 0; }
+    .stages.five button { padding: 5px 3px; font-size: 14px; } .stages.five { gap: 2px; }
     .filters { width: 100%; } .filters label { flex: 1 1 0; min-width: 96px; } .filters select { width: 100%; }
   }
   .divgroup { display: flex; gap: 8px; align-items: center; }
@@ -1158,7 +1170,7 @@ async function refresh() {
     const rows = await fetchRows(parts);
     const next = parseTab(d, rows);
     const items = next.kind === "brackets" ? next.brackets.filter(g => g.matches.length) : next.pools;
-    if (!items.length && next.kind !== "table") throw new Error("No pools found");
+    if (!items.length && !["table", "seeding"].includes(next.kind)) throw new Error("No pools found");
     const keys = snapshot(next);
     const changed = s.prevKeys ? Object.keys(keys).filter(k => s.prevKeys[k] !== undefined && s.prevKeys[k] !== keys[k]) : [];
     if (current().id === d.id) flashKeys = new Set(changed);
@@ -1279,13 +1291,41 @@ function saveTab(d, rows) {
 const parseTab = (d, rows) => {
   if ((d.type || "pools") === "brackets") return parseBrackets(rows);
   // A Seeding row: seeding games ("Play-In + Seeding") read as single matches, else the tab is shown as a table
-  if (d.type === "seeding") { const b = parseBrackets(rows); return b.brackets.some(g => g.matches.length) ? b : tableModel(rows); }
+  if (d.type === "seeding") {
+    const sd = parseSeeding(rows); if (sd.blocks.length) return sd;
+    const b = parseBrackets(rows); return b.brackets.some(g => g.matches.length) ? b : tableModel(rows);
+  }
   const m = parsePools(rows);
   if (m.pools.length) return m;
   // A Pool play row whose tab has no pools: a qualifier tab, read as single matches
   const b = parseBrackets(rows);
   return b.brackets.some(g => g.qualifier) ? b : m;
 };
+/* The pool seeding list (kind "seeding"): per division a header row "G18u D1/D2 TEAM NAME (Listed in
+   Alphabetical Order)" | "POOLS- TBA" | "SEEDS- TBA", then one row per team with its pool and seed once
+   they're assigned (blank or TBA before). A tab can hold several divisions, each with its own header. */
+function parseSeeding(rows) {
+  const clean = v => { const x = String(v || "").trim(); return /^(tba|tbd|-+)$/i.test(x) ? "" : x; };
+  const blocks = [];
+  rows.forEach((row, r) => {
+    const tc = row.findIndex(v => /team\s*names?/i.test(v)); if (tc < 0) return;
+    const pc = row.findIndex(v => /^\s*pools?\b/i.test(v)), sc = row.findIndex(v => /^\s*seeds?\b/i.test(v));
+    const label = row[tc].replace(/team\s*names?.*$/i, "").trim();
+    const b = { key: "s" + r, label, teams: [] };
+    for (let rr = r + 1; rr < rows.length; rr++) {
+      const row2 = rows[rr] || [], team = String(row2[tc] || "").trim();
+      if (row2.some(v => /team\s*names?/i.test(v))) break;
+      if (!team) { if (b.teams.length) break; continue; }
+      const pool = clean(row2[pc]).replace(/^pool\s*/i, "").toUpperCase(), seed = clean(row2[sc]).replace(/^#\s*/, "");
+      b.teams.push({ team, pool: pc >= 0 ? pool : "", seed: sc >= 0 ? seed : "" });
+    }
+    if (b.teams.length) blocks.push(b);
+  });
+  return { kind: "seeding", pools: [], brackets: [], blocks };
+}
+// "Pool C, #2 seed" for a team on a seeding list, or "" if it isn't on one
+const seedText = t => t.pool ? `Pool ${t.pool}${t.seed ? `, #${t.seed} seed` : ""}` : t.seed ? `#${t.seed} seed` : "";
+
 /* A tab shown as it is (kind "table"): the 2026 pool seeding list, which ranks the teams into the pools
    (#1-#4 in Pool A, B, C...), until its layout is known. Empty rows and columns are dropped. */
 function tableModel(rows) {
@@ -1467,11 +1507,16 @@ function matchPaths(d, g, m) {
 
 // Every team on the loaded divisions (id = age group + team name) and every match with a team in it
 function clubIndex() {
-  const teams = new Map(), games = [];
+  const teams = new Map(), games = [], seeds = new Map();
   divisions().forEach(d => {
     const m = slot(d.id).model; if (!m) return;
     const age = ageOf(d);
     const add = name => { if (!name) return null; const id = age + "|" + name; if (!teams.has(id)) teams.set(id, { id, club: clubOf(name), age, name, suffix: teamSuffix(name) }); return id; };
+    // Seeding lists: every team can be picked before the pool tabs list them (each block names its age group)
+    if (m.kind === "seeding") m.blocks.forEach(b => {
+      const bage = ageOf({ name: b.label }) || age;
+      b.teams.forEach(t => { const id = bage + "|" + t.team; if (!teams.has(id)) teams.set(id, { id, club: clubOf(t.team), age: bage, name: t.team, suffix: teamSuffix(t.team) }); seeds.set(id, { ...t, label: b.label || d.name }); });
+    });
     if (m.kind === "pools") m.pools.forEach(p => {
       p.teams.forEach(t => add(t.team));
       const est = estimateStarts(p.matches);
@@ -1497,7 +1542,7 @@ function clubIndex() {
         vol: volGame(d, { match: volBracketMatch(d, m, x), base: volBracketBase(d, m, x), a, b, day: x.day, court: x.court, time: String(x.time || "").toUpperCase() }) });
     })));
   });
-  return { teams, games };
+  return { teams, games, seeds };
 }
 
 /* ---------------- Info tab ---------------- */
@@ -1586,7 +1631,7 @@ function renderClub() {
   document.title = (SITE_LABEL ? SITE_LABEL + " · " : "") + "My teams";
   $("eventLine").textContent = eventName();
   busy(club.busy);
-  const { teams, games } = clubIndex();
+  const { teams, games, seeds } = clubIndex();
   const all = [...teams.values()];
   const clubs = [...new Set(all.map(t => t.club))].sort((a, b) => a.localeCompare(b));
   const wanted = settings.club === undefined ? clubs.find(c => c.toLowerCase() === DEFAULT_CLUB.toLowerCase()) : settings.club;
@@ -1653,8 +1698,12 @@ function renderClub() {
         <div class="side ${res("b")}${ourSide[1] ? " ours" : ""}"><span class="nm">${nm(g.b)}</span><span class="sets">${setCells(1)}</span></div>
         ${g.forfeit ? `<div class="foot" style="color:var(--muted);font-size:14px;margin-top:6px">${esc(g.forfeit)} didn't show (forfeit)</div>` : ""}${paths(g)}${volButton(g.vol)}</li>`;
     }).join("") + (lastDay !== null ? "</ol></section>" : "");
+    // Picked teams with no games yet: their pool and seed from the seeding list
+    const waiting = [...picked].filter(id => seeds.has(id) && !list.some(g => g.ids.includes(id)));
+    const seedCard = waiting.length ? `<section class="card seedcard"><h3>Pool seeding</h3><ol class="seedlist">${waiting.map(id => {
+      const t = seeds.get(id); return `<li><span class="team"><b>${esc(t.label)}</b> · ${esc(t.team)}</span><span class="seedwhere">${esc(seedText(t) || "Pool and seed not posted yet")}</span></li>`; }).join("")}</ol></section>` : "";
     html += !picked.size ? `<div class="msg"><h2>Pick your teams</h2><p>Tap “Pick your teams”, tick the ones you follow, then Done.</p></div>`
-      : list.length ? items : `<div class="msg"><p>No matches yet for these teams.</p></div>`;
+      : seedCard + (list.length ? items : seedCard ? "" : `<div class="msg"><p>No matches yet for these teams.</p></div>`);
     if (picked.size) html += `<p class="note" style="padding:12px 0 0">Bracket matches show up here once teams are placed in the brackets. ★ marks your teams.</p>`;
   }
   $("main").innerHTML = html;
@@ -2020,6 +2069,7 @@ function render() {
   const sheet = /^https:\/\/docs\.google\.com\//.test(d.url) ? `<a class="sheetlink" href="${esc(d.url)}" target="_blank" rel="noopener">Open sheet ↗</a>` : "";
   if (model.kind === "brackets") return renderBrackets(s, html, sheet);
   if (model.kind === "table") return renderTable(s, html, sheet);
+  if (model.kind === "seeding") return renderSeeding(s, html, sheet);
   // First visit to this division: open the pool with a followed or My teams team
   if (!s.active) { const fp = model.pools.find(x => x.teams.some(t => isMine(d, t.team))) || model.pools[0]; if (fp) s.active = fp.letter; }
   $("pools").innerHTML = model.pools.map(p =>
@@ -2079,6 +2129,27 @@ function render() {
 `;
   $("main").innerHTML = html;
   flashKeys = new Set();
+}
+
+// The seeding list: by pool (#1, #2… in each) once assigned, else the teams in alphabetical order
+function renderSeeding(s, html, sheet) {
+  const d = current(), blocks = s.model.blocks;
+  if (!blocks.some(b => b.key === s.active)) s.active = (blocks.find(b => b.teams.some(t => isMine(d, t.team))) || blocks[0]).key;
+  const b = blocks.find(x => x.key === s.active);
+  $("pools").innerHTML = blocks.length > 1 ? blocks.map(x => `<button type="button" data-pool="${esc(x.key)}" aria-pressed="${x.key === s.active}">${esc(x.label || "Teams")}</button>`).join("") : "";
+  const all = blocks.flatMap(x => x.teams.map(t => t.team)).sort((a, c) => a.localeCompare(c));
+  const followed = followIn(d, all);
+  $("followSel").innerHTML = `<option value="">Follow a team…</option>` + all.map(t => `<option ${t === followed ? "selected" : ""}>${esc(t)}</option>`).join("");
+  const row = t => `<li class="${isMine(d, t.team) ? "mine" : ""}"><span class="sd">${t.seed ? "#" + esc(t.seed) : ""}</span><span class="team">${esc(t.team)}</span></li>`;
+  const pools = [...new Set(b.teams.map(t => t.pool).filter(Boolean))].sort((x, y) => x.localeCompare(y, undefined, { numeric: true }));
+  const bySeed = (x, y) => (parseInt(x.seed, 10) || 99) - (parseInt(y.seed, 10) || 99) || x.team.localeCompare(y.team);
+  const open = b.teams.filter(t => !t.pool);
+  const body = pools.length
+    ? `<div class="seedpools">${pools.map(p => `<section class="card"><h3>Pool ${esc(p)}</h3><ol class="seedlist">${b.teams.filter(t => t.pool === p).sort(bySeed).map(row).join("")}</ol></section>`).join("")}</div>
+      ${open.length ? `<section class="card"><h3>Not placed yet</h3><ol class="seedlist">${open.map(row).join("")}</ol></section>` : ""}`
+    : `<section class="card"><h3>${b.teams.length} teams</h3><p class="seednote">Pools and seeds aren't posted yet. They'll show here by pool once the tournament fills them in.</p><ol class="seedlist">${b.teams.map(row).join("")}</ol></section>`;
+  html += `<div class="pool-head"><h2>${esc(b.label ? b.label + " seeding" : d.name)}</h2>${sheet}</div>${body}`;
+  $("main").innerHTML = html;
 }
 
 // A tab shown as a table (the seeding list): rows with one of our teams are highlighted
