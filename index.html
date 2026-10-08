@@ -118,6 +118,8 @@
   .seedpools { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-bottom: 14px; }
   .seedpools .card { margin: 0; }
   .seedtable .scroll { overflow-x: auto; }
+  .moderow { border-collapse: collapse; margin: 4px 0 10px; font-size: 14px; }
+  .moderow th, .moderow td { border: 1px solid var(--line); padding: 4px 10px; text-align: left; }
   .seedtable td { white-space: nowrap; padding: 6px 10px; }
   .sortbtn .arrow { color: var(--accent-deep); margin-left: 4px; }
   .teampick summary { list-style: none; cursor: pointer; font: 600 15px Barlow, sans-serif; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
@@ -302,9 +304,9 @@
   <div class="filterbar">
     <div class="filters" id="filters" aria-label="Filters"></div>
     <div class="stages" id="stages" role="group" aria-label="Tournament stage">
+      <button type="button" data-stage="seeding" hidden>Seeding</button>
       <button type="button" data-stage="club">My teams</button>
       <button type="button" data-stage="pools">Pool play</button>
-      <button type="button" data-stage="seeding" hidden>Seeding</button>
       <button type="button" data-stage="brackets">Bracket play</button>
       <button type="button" data-stage="info">Info</button>
     </div>
@@ -847,10 +849,12 @@ function parseConfig(rows) {
   const opt = (r, c) => c >= 0 ? (r[c] || "").trim() : "";
   // rows keeps every entry, hidden ones and ones without a link too, so they can
   // hide, rename or retag divisions found on the NCHVC index
-  const entries = []; let event = "";
+  const entries = []; let event = "", seeding = false;
   rows.slice(hr + 1).forEach(r => {
     const stage = low(r[cStage]), name = (r[cName] || "").trim(), link = (r[cLink] || "").trim();
     if (/^event/.test(stage)) { event = name; return; }
+    // "Mode" | "Seeding" | | Show Yes / No: seeding mode for everyone (Seeding and Info tabs only)
+    if (/^mode/.test(stage)) { if (/seed/i.test(name)) seeding = !(cShow >= 0 && /^(no|n|false|off|hide|hidden)$/.test(low(r[cShow]))); return; }
     if (!stage && !name && !link) return;
     const type = /seed/.test(stage) ? "seeding" : /bracket/.test(stage) ? "brackets" : /pool/.test(stage) ? "pools" : null;
     if (!type || !name) return;
@@ -860,7 +864,7 @@ function parseConfig(rows) {
       gender: /^b/i.test(g) ? "Boys" : /^g/i.test(g) ? "Girls" : g, age: opt(r, cAge).toUpperCase(), level: opt(r, cLevel), bracket: opt(r, cBracket) });
   });
   const visible = entries.filter(e => !e.hidden);
-  return { divs: visible.filter(e => linkParts(e.url)), rows: entries, event, skipped: visible.filter(e => !linkParts(e.url)).map(e => e.name) };
+  return { divs: visible.filter(e => linkParts(e.url)), rows: entries, event, seeding, skipped: visible.filter(e => !linkParts(e.url)).map(e => e.name) };
 }
 const divId = (type, name) => type + ":" + name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 const noTags = (k, v) => k === "_tags" ? undefined : v;
@@ -1079,7 +1083,14 @@ async function updateDivisionList() {
   if (setup) renderListStatus();
 }
 // My teams is the default tab until another is picked
-const currentStage = () => settings.stage || "club";
+/* Seeding mode (the divisions sheet's "Mode | Seeding" row, Show Yes) shows only the Seeding and Info tabs;
+   otherwise Seeding is hidden and My teams, Pool play and Bracket play show */
+const seedingMode = () => !!(configDivs && configDivs.seeding);
+const currentStage = () => {
+  const st = settings.stage || (seedingMode() ? "seeding" : "club");
+  if (seedingMode()) return st === "info" ? "info" : "seeding";
+  return st === "seeding" ? "club" : st;
+};
 /* Filter tags come from the divisions sheet's optional Gender, Age, Level and
    Bracket columns, or are read from the division name ("Girls 18U D1 Gold Ball"). */
 function tagsOf(d) {
@@ -2020,9 +2031,9 @@ function renderDivisions() {
   const stage = currentStage();
   document.querySelectorAll("#stages button").forEach(b => b.setAttribute("aria-pressed", b.dataset.stage === stage));
   // The Seeding tab shows only when the divisions sheet lists seeding tabs (Stage "Seeding")
-  const seedBtn = document.querySelector('#stages button[data-stage="seeding"]');
-  seedBtn.hidden = !divisions().some(x => typeOf(x) === "seeding") && stage !== "seeding";
-  $("stages").classList.toggle("five", !seedBtn.hidden);
+  const mode = seedingMode();
+  document.querySelectorAll("#stages button").forEach(b => { b.hidden = mode ? !["seeding", "info"].includes(b.dataset.stage) : b.dataset.stage === "seeding"; });
+  $("stages").classList.toggle("five", [...document.querySelectorAll("#stages button")].filter(b => !b.hidden).length > 4);
   $("filters").innerHTML = ""; $("filters").hidden = true;
   // One dropdown of the stage's divisions picks the pool or bracket shown below
   const list = visibleDivisions(stage);
@@ -2273,7 +2284,13 @@ function renderListStatus() {
 
 function renderSetup() {
   const custom = settings.custom || [];
+  const mode = seedingMode();
   $("main").innerHTML = `
+    <div class="msg"><h2>Seeding mode: ${mode ? "On" : "Off"}</h2>
+      <p>${mode ? "Everyone sees only the <strong>Seeding</strong> and <strong>Info</strong> tabs." : "Everyone sees <strong>My teams</strong>, <strong>Pool play</strong>, <strong>Bracket play</strong> and <strong>Info</strong>; the Seeding tab is hidden."}</p>
+      <p>To turn it ${mode ? "off" : "on"}, ${mode ? "set Show to <strong>No</strong> on" : "add (or set Show to <strong>Yes</strong> on)"} this row of ${/^https:\/\/docs\.google\.com\//.test(CONFIG_SHEET) ? `<a href="${esc(CONFIG_SHEET)}" target="_blank" rel="noopener">your divisions sheet ↗</a>` : "your divisions sheet"}, then tap Refresh:</p>
+      <table class="moderow"><tr><th>Stage</th><th>Division</th><th>Link</th><th>Show</th></tr><tr><td>Mode</td><td>Seeding</td><td></td><td>${mode ? "No" : "Yes"}</td></tr></table>
+      <p style="color:var(--muted);font-size:14px">Every phone follows the sheet the next time the app opens or Refresh is tapped.</p></div>
     <div class="msg" id="listStatus"></div>
     <div class="msg"><h2>Add a division</h2>
       <p>Divisions added here are saved only on this device. To add one for everyone, add a row to the divisions sheet instead.</p>
