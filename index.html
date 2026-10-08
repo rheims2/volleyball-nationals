@@ -105,6 +105,8 @@
   .whatnext b { font-weight: 600; }
   .whatnext .wn-out { margin-top: 4px; color: var(--muted); }
   .whatnext .wn-when { white-space: nowrap; }
+  .seedtable .scroll { overflow-x: auto; }
+  .seedtable td { white-space: nowrap; padding: 6px 10px; }
   .sortbtn .arrow { color: var(--accent-deep); margin-left: 4px; }
   .teampick summary { list-style: none; cursor: pointer; font: 600 15px Barlow, sans-serif; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
   .teampick summary::-webkit-details-marker { display: none; }
@@ -124,6 +126,7 @@
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   @media (max-width: 600px) {
     .stages { order: -1; width: 100%; } .stages button { flex: 1; white-space: nowrap; padding: 5px 6px; font-size: 16px; }
+    .stages.five button { padding: 5px 2px; font-size: 14.5px; letter-spacing: -0.1px; } .stages.five { gap: 0; }
     .filters { width: 100%; } .filters label { flex: 1 1 0; min-width: 96px; } .filters select { width: 100%; }
   }
   .divgroup { display: flex; gap: 8px; align-items: center; }
@@ -289,6 +292,7 @@
     <div class="stages" id="stages" role="group" aria-label="Tournament stage">
       <button type="button" data-stage="club">My teams</button>
       <button type="button" data-stage="pools">Pool play</button>
+      <button type="button" data-stage="seeding" hidden>Seeding</button>
       <button type="button" data-stage="brackets">Bracket play</button>
       <button type="button" data-stage="info">Info</button>
     </div>
@@ -663,7 +667,8 @@ function parseBrackets(rows) {
      Otherwise rounds are the columns, rightmost being the Final. */
   const KINDS = [
     // Play-in matches before the bracket ("GJV Qualifier"): winners and losers go elsewhere, no champion
-    { k: "qualifier", re: /qualif|play[\s-]?in/i, name: "Qualifier" },
+    // ...and seeding games ("G16u D2 Gold Seeding", "G16u D2 Gold Pl", a cut-off "Play-in"), which work the same way
+    { k: "qualifier", re: /qualif|play[\s-]?in|seeding|\bpl$/i, name: "Qualifier" },
     { k: "quarter", re: /quarter/i, name: "Quarterfinals", next: "semi" },
     { k: "consemi", re: /\bcon(s|solation)?\.?\s*semi/i, name: "Consolation semifinals", extra: true, next: "5th" },
     { k: "semi", re: /semi/i, name: "Semifinals", next: "final" },
@@ -703,7 +708,11 @@ function parseBrackets(rows) {
     });
     // A tab of qualifier matches only has no final: it's named after its matches ("GJV Qualifier")
     g.qualifier = all.length > 0 && all.every(rd => rd.kind && rd.kind.k === "qualifier");
-    if (g.qualifier && g.key === "b0") { g.title = g.matches[0].name || "Qualifier"; g.label = "Qualifier"; }
+    if (g.qualifier && g.key === "b0") {
+      g.title = g.matches[0].name || "Qualifier"; g.label = "Qualifier";
+      // A seeding tab ("Play-In + Seeding", "Seeding + Qualifier") is labelled Seeding
+      if (g.matches.some(m => /seeding/i.test(m.name))) { g.label = "Seeding"; g.title = g.title.replace(/\s+(gold\s+)?(seeding|qualifier|pl)\b.*$/i, "") + " Seeding"; all.forEach(rd => { rd.name = "Seeding games"; }); }
+    }
     const fin = !g.qualifier && g.rounds.length ? g.rounds[g.rounds.length - 1].matches[0] : null;
     if (!g.champion && fin && fin.winner) g.champion = fin[fin.winner].team;
     /* No results table: build one from the final and the 3rd/5th/7th place matches
@@ -831,7 +840,7 @@ function parseConfig(rows) {
     const stage = low(r[cStage]), name = (r[cName] || "").trim(), link = (r[cLink] || "").trim();
     if (/^event/.test(stage)) { event = name; return; }
     if (!stage && !name && !link) return;
-    const type = /bracket/.test(stage) ? "brackets" : /pool/.test(stage) ? "pools" : null;
+    const type = /seed/.test(stage) ? "seeding" : /bracket/.test(stage) ? "brackets" : /pool/.test(stage) ? "pools" : null;
     if (!type || !name) return;
     const g = opt(r, cGender);
     entries.push({ id: divId(type, name), type, name, url: link,
@@ -893,14 +902,14 @@ function sheetRows(found) {
   const rows = (configDivs && configDivs.rows) || [];
   const used = new Set();
   const mine = d => { const i = rows.findIndex((r, k) => !used.has(k) && r.url && sameTab(r.url, d.url)); if (i >= 0) used.add(i); return i >= 0 ? rows[i] : null; };
-  const stage = t => t === "brackets" ? "Bracket play" : "Pool play";
+  const stage = t => t === "brackets" ? "Bracket play" : t === "seeding" ? "Seeding" : "Pool play";
   const books = new Set([...found.divs, ...(found.failed || [])].map(d => (linkParts(d.url) || {}).id).filter(Boolean));
   const sameEvent = rows.some(r => books.has((linkParts(r.url) || {}).id));
   const out = [["Stage", "Division", "Link", "Show", "Gender", "Age", "Level", "Bracket"], ["Event", (sameEvent && configDivs.event) || found.event || "", "", "", "", "", "", ""]];
   const add = (d, show) => { const r = mine(d);
     out.push([stage(d.type), r ? r.name : d.name, d.url, r && r.hidden ? "No" : show, r ? r.gender : "", r ? r.age : "", r ? r.level : "", r ? r.bracket : ""]); };
   found.divs.forEach(d => add(d, "Yes"));
-  (found.failed || []).filter(f => f.url).forEach(f => add({ type: /pool|qualif/i.test(f.tab) ? "pools" : "brackets", name: f.name, url: f.url }, "No"));
+  (found.failed || []).filter(f => f.url).forEach(f => add({ type: tabType(f.tab), name: f.name, url: f.url }, "No"));
   rows.forEach((r, k) => { if (!used.has(k) && books.has((linkParts(r.url) || {}).id) && !out.some(o => sameTab(o[2], r.url))) out.push([stage(r.type), r.name, r.url, r.hidden ? "No" : "Yes", r.gender, r.age, r.level, r.bracket]); });
   return out.map(r => r.map(v => String(v || "").replace(/[\t\n]/g, " ")).join("\t")).join("\n");
 }
@@ -981,6 +990,10 @@ function tabReadable(d, rows) {
   return list.length > 0 && list.every(g => g.named && halves(g));
 }
 
+// A tab's stage from its title: seeding and play-in tabs ("Play-In + Seeding", "Seeding + Qualifier") are Seeding;
+// pool and other qualifier tabs are played with pool play, so they're listed there; the rest are brackets
+const tabType = t => /seeding|play[\s-]?in/i.test(t) ? "seeding" : /pool|qualif/i.test(t) ? "pools" : "brackets";
+
 async function discoverDivisions(progress) {
   const ip = linkParts(INDEX_SHEET);
   const index = await sheetsApi(ip.id, "sheets(properties(sheetId,title),data(rowData(values(formattedValue,hyperlink,textFormatRuns(format(link(uri))),userEnteredValue(formulaValue)))))");
@@ -998,8 +1011,7 @@ async function discoverDivisions(progress) {
     const base = bookName(l.label, title);
     (b.sheets || []).forEach(({ properties: p }) => {
       if (p.hidden || SKIP_TABS.test(p.title.trim())) return;
-      // Qualifier (play-in) tabs are played with pool play, so they're listed there
-      const type = /pool|qualif/i.test(p.title) ? "pools" : "brackets";
+      const type = tabType(p.title);
       const name = tabName(base, p.title, type);
       candidates.push({ id: divId(type, name), type, name, url: `https://docs.google.com/spreadsheets/d/${l.id}/edit#gid=${p.sheetId}`, tab: p.title, book: l.label });
     });
@@ -1146,7 +1158,7 @@ async function refresh() {
     const rows = await fetchRows(parts);
     const next = parseTab(d, rows);
     const items = next.kind === "brackets" ? next.brackets.filter(g => g.matches.length) : next.pools;
-    if (!items.length) throw new Error("No pools found");
+    if (!items.length && next.kind !== "table") throw new Error("No pools found");
     const keys = snapshot(next);
     const changed = s.prevKeys ? Object.keys(keys).filter(k => s.prevKeys[k] !== undefined && s.prevKeys[k] !== keys[k]) : [];
     if (current().id === d.id) flashKeys = new Set(changed);
@@ -1266,12 +1278,21 @@ function saveTab(d, rows) {
 }
 const parseTab = (d, rows) => {
   if ((d.type || "pools") === "brackets") return parseBrackets(rows);
+  // A Seeding row: seeding games ("Play-In + Seeding") read as single matches, else the tab is shown as a table
+  if (d.type === "seeding") { const b = parseBrackets(rows); return b.brackets.some(g => g.matches.length) ? b : tableModel(rows); }
   const m = parsePools(rows);
   if (m.pools.length) return m;
   // A Pool play row whose tab has no pools: a qualifier tab, read as single matches
   const b = parseBrackets(rows);
   return b.brackets.some(g => g.qualifier) ? b : m;
 };
+/* A tab shown as it is (kind "table"): the 2026 pool seeding list, which ranks the teams into the pools
+   (#1-#4 in Pool A, B, C...), until its layout is known. Empty rows and columns are dropped. */
+function tableModel(rows) {
+  const used = rows.filter(r => r.some(v => String(v).trim()));
+  const cols = [...new Set(used.flatMap(r => r.map((v, c) => String(v).trim() ? c : -1)))].filter(c => c >= 0).sort((a, b) => a - b);
+  return { kind: "table", pools: [], brackets: [], rows: used.map(r => cols.map(c => String(r[c] || "").trim())) };
+}
 // Fills the divisions not loaded yet from the saved tabs (same link only); they count as old, so they're fetched again
 function restoreTabs() {
   let oldest = null;
@@ -1369,7 +1390,8 @@ function findDest(d, text) {
   const want = slotKey(cls ? cls + n : mm[2]);
   for (const x of nearBooks(d, fam)) {
     const mod = slot(x.id).model; if (mod.kind !== "brackets") continue;
-    if (!cls && !words.every(w => x.name.toLowerCase().includes(w))) continue;
+    const seedTab = x.type === "seeding" && words.some(w => /^(seeding|play|qualifier)$/.test(w));
+    if (!cls && !seedTab && !words.every(w => x.name.toLowerCase().includes(w))) continue;
     for (const g of mod.brackets) for (const rd of [...g.rounds, ...(g.extra || [])]) for (const m of rd.matches)
       for (const side of ["top", "bottom"]) {
         const seed = m[side] ? m[side].seed : m[side + "Seed"];
@@ -1947,10 +1969,14 @@ function renderDivisions() {
   const cur = current().id;
   const stage = currentStage();
   document.querySelectorAll("#stages button").forEach(b => b.setAttribute("aria-pressed", b.dataset.stage === stage));
+  // The Seeding tab shows only when the divisions sheet lists seeding tabs (Stage "Seeding")
+  const seedBtn = document.querySelector('#stages button[data-stage="seeding"]');
+  seedBtn.hidden = !divisions().some(x => typeOf(x) === "seeding") && stage !== "seeding";
+  $("stages").classList.toggle("five", !seedBtn.hidden);
   $("filters").innerHTML = ""; $("filters").hidden = true;
   // One dropdown of the stage's divisions picks the pool or bracket shown below
   const list = visibleDivisions(stage);
-  $("divs").innerHTML = list.length ? `<label class="divpick"><span class="sr">${stage === "brackets" ? "Bracket" : "Pool"}</span><select id="divSel">${
+  $("divs").innerHTML = list.length ? `<label class="divpick"><span class="sr">${stage === "brackets" ? "Bracket" : stage === "seeding" ? "Seeding" : "Pool"}</span><select id="divSel">${
     setup ? `<option value="" selected>Pick a division…</option>` : ""}${
     divOptions(list, cur)}</select></label>` : "";
   $("divs").hidden = !list.length;
@@ -1959,9 +1985,9 @@ function renderDivisions() {
 const notices = () => { baseDivisions(); return [configWarning, mergeWarning].filter(Boolean).map(w => `<div class="msg err"><p>${esc(w)}</p></div>`).join(""); };
 function render() {
   const d = current(), s = slot(d.id);
-  document.title = (SITE_LABEL ? SITE_LABEL + " · " : "") + d.name + (d.type === "brackets" ? " brackets" : " pools"); $("title").textContent = d.name;
+  document.title = (SITE_LABEL ? SITE_LABEL + " · " : "") + d.name + (d.type === "brackets" ? " brackets" : d.type === "seeding" ? " seeding" : " pools"); $("title").textContent = d.name;
   $("siteLabel").hidden = !SITE_LABEL; $("siteLabel").textContent = SITE_LABEL;
-  $("eventLine").textContent = eventName() + (d.type === "brackets" ? " bracket play" : " pool play");
+  $("eventLine").textContent = eventName() + (d.type === "brackets" ? " bracket play" : d.type === "seeding" ? " seeding" : " pool play");
   renderDivisions(); updateStatus(); busy(s.busy);
   if (setup) { $("bar").hidden = true; return renderSetup(); }
   if (currentStage() === "club") return renderClub();
@@ -1993,6 +2019,7 @@ function render() {
   // The tournament's own tab, for anything this page doesn't show
   const sheet = /^https:\/\/docs\.google\.com\//.test(d.url) ? `<a class="sheetlink" href="${esc(d.url)}" target="_blank" rel="noopener">Open sheet ↗</a>` : "";
   if (model.kind === "brackets") return renderBrackets(s, html, sheet);
+  if (model.kind === "table") return renderTable(s, html, sheet);
   // First visit to this division: open the pool with a followed or My teams team
   if (!s.active) { const fp = model.pools.find(x => x.teams.some(t => isMine(d, t.team))) || model.pools[0]; if (fp) s.active = fp.letter; }
   $("pools").innerHTML = model.pools.map(p =>
@@ -2052,6 +2079,19 @@ function render() {
 `;
   $("main").innerHTML = html;
   flashKeys = new Set();
+}
+
+// A tab shown as a table (the seeding list): rows with one of our teams are highlighted
+function renderTable(s, html, sheet) {
+  const d = current(), mine = pickedIn(d).concat(settings.follow ? [settings.follow] : []);
+  $("pools").innerHTML = ""; $("bar").hidden = true;
+  const rows = s.model.rows;
+  html += `<div class="pool-head"><h2>${esc(d.name)}</h2>${sheet}</div>
+    <section class="card seedtable"><div class="scroll"><table><tbody>${rows.map(r => {
+      const ours = r.some(v => mine.includes(v) || (DEFAULT_CLUB && clubOf(v).toLowerCase() === DEFAULT_CLUB.toLowerCase()));
+      return `<tr class="${ours ? "mine" : ""}">${r.map(v => `<td>${esc(v)}</td>`).join("")}</tr>`; }).join("")}</tbody></table></div>
+    <p class="note">As written on the tournament's seeding tab.</p></section>`;
+  $("main").innerHTML = html;
 }
 
 function renderBrackets(s, html, sheet) {
@@ -2170,7 +2210,7 @@ function renderSetup() {
       <label>Division name<input name="name" required placeholder="Boys 18U"></label>
       <label>What's on this tab
         <select name="type" style="font:16px Barlow,sans-serif;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)">
-          <option value="pools" ${currentStage() === "pools" ? "selected" : ""}>Pool play</option><option value="brackets" ${currentStage() === "brackets" ? "selected" : ""}>Bracket play</option></select></label>
+          <option value="pools" ${currentStage() === "pools" ? "selected" : ""}>Pool play</option><option value="seeding" ${currentStage() === "seeding" ? "selected" : ""}>Seeding</option><option value="brackets" ${currentStage() === "brackets" ? "selected" : ""}>Bracket play</option></select></label>
       <label>Google Sheet link<input name="url" required placeholder="https://docs.google.com/spreadsheets/d/…#gid=…"></label>
       <div class="row">
         <button class="refresh" type="submit">Add division</button>
