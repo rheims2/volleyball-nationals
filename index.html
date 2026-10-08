@@ -98,6 +98,13 @@
   .teampick { position: static; }
   /* My teams: day-and-time order, earliest or latest first */
   .sortbtn { font: 600 15px Barlow, sans-serif; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; white-space: nowrap; }
+  /* What's next: where the winner and loser of a game play, and where each pool place goes */
+  .whatnext { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--tint); font-size: 14px; line-height: 1.45; }
+  .whatnext .wn-h { font-weight: 700; margin-bottom: 2px; }
+  .whatnext .wn-k { font-weight: 700; color: var(--accent-deep); }
+  .whatnext b { font-weight: 600; }
+  .whatnext .wn-out { margin-top: 4px; color: var(--muted); }
+  .whatnext .wn-when { white-space: nowrap; }
   .sortbtn .arrow { color: var(--accent-deep); margin-left: 4px; }
   .teampick summary { list-style: none; cursor: pointer; font: 600 15px Barlow, sans-serif; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
   .teampick summary::-webkit-details-marker { display: none; }
@@ -419,7 +426,7 @@ function parsePools(rows) {
   const pools = starts.map((st, i) => {
     const end = st.end;
     let day = tabDay;
-    const pool = { letter: st.letter, name: st.name, matches: [], teams: [], results: [], complete: false, grid: {}, slots: 0 };
+    const pool = { letter: st.letter, name: st.name, matches: [], teams: [], results: [], advance: [], complete: false, grid: {}, slots: 0 };
     let seed = null, resRow = null;
     if (st.resRow != null) { resRow = st.resRow; pool.complete = (rows[resRow] || []).some(x => /^complete$/i.test(x)); }
     for (let r = st.r + 1; r < (st.resRow != null ? st.resRow : end); r++) {
@@ -438,7 +445,10 @@ function parsePools(rows) {
           for (let k = vs + 1; k < row.length && !b; k++) b = real(row[k]);
           // Some tabs put the day in the time cell ("FRI 10:00 AM", 2025 Nationals Iron pools, whose "Days:" header is "F/S")
           const dt = at(r, c + 2).match(/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s+(.+)$/i);
-          pool.matches.push({ num: v.replace(/\D+/g, ""), court: at(r, c + 1), time: dt ? dt[2] : at(r, c + 2), a, b, day: dt ? dt[1] : day });
+          // "Team 1" / "Team 3" placeholders (Iron and Consolation pools) are the places the teams fill: aSlot / bSlot
+          const place = (from, to) => { for (let k = from; k < to; k++) { const p = String(row[k] || "").match(/^team\s*(\d+)$/i); if (p) return +p[1]; } return 0; };
+          pool.matches.push({ num: v.replace(/\D+/g, ""), court: at(r, c + 1), time: dt ? dt[2] : at(r, c + 2), a, b, day: dt ? dt[1] : day,
+            aSlot: place(c + 3, vs), bSlot: place(vs + 1, row.length) });
           break;
         }
         if (v === "Seed" && !seed) { seed = { r, c }; break; }
@@ -490,6 +500,11 @@ function parsePools(rows) {
           const team = at(rr, tc); if (!team) break;
           pool.results.push({ rank: at(rr, rc), team, adv: ac >= 0 ? at(rr, ac) : "" });
         }
+        // Where each place goes ("1st" -> "Gold Ball Class 8A-1"), written in before the pool is played
+        if (ac >= 0) for (let rr = r + 1; rr < Math.min(r + 12, end); rr++) {
+          const rank = at(rr, rc), adv = at(rr, ac); if (!rank && !adv) break;
+          const n = parseInt(rank, 10); if (n && adv) pool.advance.push({ n, rank, adv });
+        }
         break;
       }
     }
@@ -522,14 +537,19 @@ function parseBrackets(rows) {
   // Matches: anchored on the start-time cell, with day above and court + match name below
   const matches = cells.filter(x => isTime(x.v)).map(({ r, c, v }) => {
     const m = { r, c, time: v, day: at(r - 1, c), court: at(r + 1, c), name: at(r + 2, c), format: "", top: null, bottom: null, sets: [], winner: null, loserTo: "", winnerTo: "" };
+    // A slot with a seed but no team yet ("8A #1" before seeding) keeps its seed (topSeed / bottomSeed), so
+    // "Gold Ball Class 8A-1" or "Copper-4" can be traced to this match
+    const seedOnly = rr => !at(rr, c) && isSeed(at(rr, c - 1)) && !isTime(at(rr, c - 1));
     for (let k = 1; k <= 7; k++) {
       const rr = r - k; if (rr < 0 || isTime(at(rr, c))) break;
       if (/best of \d/i.test(at(rr, c))) m.format = at(rr, c);
       if (isTeam(rr, c)) { m.top = { team: at(rr, c), seed: at(rr, c - 1), r: rr }; break; }
+      if (!m.topSeed && seedOnly(rr)) m.topSeed = at(rr, c - 1);
     }
     for (let k = 3; k <= 8; k++) {
       const rr = r + k; if (isTime(at(rr, c))) break;
       if (isTeam(rr, c)) { m.bottom = { team: at(rr, c), seed: at(rr, c - 1), r: rr }; break; }
+      if (!m.bottomSeed && seedOnly(rr)) m.bottomSeed = at(rr, c - 1);
     }
     // The score is written under the team that won, from the winner's side (sometimes a row lower)
     ["top", "bottom"].forEach(side => {
@@ -695,6 +715,24 @@ function parseBrackets(rows) {
     g.state = g.complete || g.champion || allPlayed ? "final" : g.matches.some(m => m.winner) ? "live" : "new";
     const firstOpen = all.flatMap(rd => rd.matches).find(m => !m.winner && m.top && m.bottom);
     if (firstOpen) firstOpen.next = true;
+    /* Where each match's winner and loser play next in this bracket (nextWin / nextLose): by round kind
+       (quarter -> semi -> final; quarter losers -> consolation semis, semi losers -> 3rd place,
+       consolation semi winners -> 5th, losers -> 7th), else the next column; each feeder goes to
+       the nearest match of the next round by row, no more than its share (two, or one with byes). */
+    const link = (from, to, prop) => {
+      if (!from.length || !to.length) return;
+      const cap = Math.ceil(from.length / to.length), used = new Map(), pairs = [];
+      from.forEach(f => to.forEach(t => pairs.push({ f, t, d: Math.abs(f.r - t.r) * 10 + Math.abs(f.c - t.c) })));
+      pairs.sort((a, b) => a.d - b.d).forEach(({ f, t }) => {
+        if (f[prop] || (used.get(t) || 0) >= cap) return;
+        f[prop] = t; used.set(t, (used.get(t) || 0) + 1);
+      });
+    };
+    const ofKind = k => (all.find(rd => rd.kind && rd.kind.k === k) || { matches: [] }).matches;
+    if (g.named) {
+      [["quarter", "semi"], ["semi", "final"], ["consemi", "5th"]].forEach(([a, b]) => link(ofKind(a), ofKind(b), "nextWin"));
+      [["quarter", "consemi"], ["semi", "3rd"], ["consemi", "7th"]].forEach(([a, b]) => link(ofKind(a), ofKind(b), "nextLose"));
+    } else g.rounds.forEach((rd, i) => { if (g.rounds[i + 1]) link(rd.matches, g.rounds[i + 1].matches, "nextWin"); });
     g.teams = [...new Set(g.matches.flatMap(m => [m.top, m.bottom]).filter(Boolean).map(t => t.team))];
   });
   return { kind: "brackets", brackets: groups.sort((a, b) => a.r - b.r) };
@@ -1275,6 +1313,127 @@ async function loadClub(force) {
   if (currentStage() === "club") render();
 }
 
+/* ---------------- what's next: where a game's winner and loser play ----------------
+   Follows the sheets' own links: a pool's Advancement column ("1st" -> "Gold Ball Class 8A-1"),
+   the bracket's shape (nextWin / nextLose from parseBrackets), "Losing team to" / "Winning team to"
+   notes ("Copper-4"), and seed slots on the other tabs of the same spreadsheet ("8A #1", "4",
+   "Team 1" in an Iron pool). A spot is { d, kind: "bracket", g, rd, m } or { d, kind: "pool", p, games },
+   or { end: "2nd place" } where the path stops. */
+const slotKey = v => String(v || "").toLowerCase().replace(/[\s#]+/g, "");
+const poolKey = v => String(v || "").toLowerCase().replace(/\bpool\b|[^a-z0-9]/g, "");
+const bookOf = d => (linkParts(d.url) || {}).id || "";
+const sameBook = d => divisions().filter(x => bookOf(x) === bookOf(d) && slot(x.id).model);
+/* Where to look for a destination: this spreadsheet first, then the age group's others (2025 G18u
+   pools sent "Division I-Class 8A #1" to the Gold Ball tab of the Division I spreadsheet), keeping to
+   the division the destination names ("Division II", "D3") */
+function nearBooks(d, text) {
+  const roman = { i: 1, ii: 2, iii: 3, iv: 4 };
+  const lv = (String(text).match(/\bdivision\s+(iv|i{1,3}|\d)\b|\bD\s*([1-4])\b/i) || []);
+  const level = lv[1] ? "D" + (roman[lv[1].toLowerCase()] || lv[1]) : lv[2] ? "D" + lv[2] : "";
+  const others = divisions().filter(x => bookOf(x) !== bookOf(d) && slot(x.id).model && ageOf(x) === ageOf(d)
+    && (!level || !tagsOf(x).level.length || tagsOf(x).level.includes(level)));
+  return [...sameBook(d), ...others];
+}
+const roundOf = (g, m) => [...g.rounds, ...(g.extra || [])].find(rd => rd.matches.includes(m));
+const spotOf = (d, g, m) => ({ d, kind: "bracket", g, rd: roundOf(g, m), m });
+const ordinal = n => n + (["th", "st", "nd", "rd"][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || "th");
+function findDest(d, text) {
+  // "Copper-4", "Gold Ball Class 8A-1", "Division I-Class 8A #1", "Iron Pool A-1", "Iron Finals-1A" (1st in Iron Pool A)
+  // (a note after it, "Gold Bracket-1 (SAT)", is dropped)
+  const mm = String(text || "").replace(/\s*\([^)]*\)\s*$/, "").trim().match(/^(.*?)[\s-]*#?\s*(\d+[A-Z]?)$/i); if (!mm) return null;
+  const fam = mm[1], n = parseInt(mm[2], 10), cls = (fam.match(/\b(\d+A)\b/i) || [])[1];
+  if (/\bpool\b/i.test(fam) && !cls) {
+    const want = poolKey(fam);
+    for (const x of nearBooks(d, fam)) {
+      const mod = slot(x.id).model; if (mod.kind !== "pools") continue;
+      const p = mod.pools.find(p => poolKey(p.name) === want); if (!p) continue;
+      const est = estimateStarts(p.matches);
+      const games = p.matches.map((m, i) => ({ m, start: est[i] != null ? est[i] : toMinutes(m.time), est: est[i] != null }))
+        .filter(o => o.m.aSlot === n || o.m.bSlot === n);
+      return { d: x, kind: "pool", p, games, label: `${x.name.includes(p.name) ? x.name : x.name + " · " + p.name}` };
+    }
+    return null;
+  }
+  // A plain number belongs to the tab named like the destination ("Copper-4" -> the Copper tab,
+  // "Iron Finals-1A" -> Iron Finals); with no such tab loaded there's no answer rather than a guess
+  const words = (fam.toLowerCase().match(/[a-z]{3,}/g) || []).filter(w => !/^(class|division|bracket|brackets|pool|pools|team|final|finals|game|the|and)$/.test(w));
+  const want = slotKey(cls ? cls + n : mm[2]);
+  for (const x of nearBooks(d, fam)) {
+    const mod = slot(x.id).model; if (mod.kind !== "brackets") continue;
+    if (!cls && !words.every(w => x.name.toLowerCase().includes(w))) continue;
+    for (const g of mod.brackets) for (const rd of [...g.rounds, ...(g.extra || [])]) for (const m of rd.matches)
+      for (const side of ["top", "bottom"]) {
+        const seed = m[side] ? m[side].seed : m[side + "Seed"];
+        if (seed && slotKey(seed) === want) return spotOf(x, g, m);
+      }
+  }
+  return null;
+}
+// A class final ("8A") feeds the championship game on another tab, whose slots are seeded "8A"
+function classGame(d, label, won) {
+  const want = slotKey(label), re = won ? /champ|undisputed|showdown|gbss/i : /silver/i;
+  for (const x of sameBook(d)) {
+    const mod = slot(x.id).model; if (mod.kind !== "brackets") continue;
+    for (const g of mod.brackets) for (const m of g.matches)
+      if (re.test(m.name) && ["top", "bottom"].some(sd => slotKey(m[sd] ? m[sd].seed : m[sd + "Seed"]) === want)) return spotOf(x, g, m);
+  }
+  return null;
+}
+// Where the winner (won = true) or the loser of bracket match m plays next
+function afterMatch(d, g, m, won) {
+  const note = won ? m.winnerTo : m.loserTo;
+  if (note) return findDest(d, note) || { end: `moves to ${note}` };
+  const nx = won ? m.nextWin : m.nextLose;
+  if (nx) return spotOf(d, g, nx);
+  const rd = roundOf(g, m), k = rd && rd.kind && rd.kind.k;
+  const place = { "3rd": 3, "5th": 5, "7th": 7 }[k];
+  if (place) return { end: `${ordinal(won ? place : place + 1)} place` };
+  if (rd && !g.qualifier && g.rounds[g.rounds.length - 1] === rd) {
+    if (/^\d+A$/i.test(g.label)) { const sp = classGame(d, g.label, won); if (sp) return sp; }
+    return { end: won ? "champion" : "2nd place" };
+  }
+  return { end: won ? "" : "no more games on the sheet" };
+}
+const dayShort = v => { const k = dayKey(v); return DAYS[k] ? k[0].toUpperCase() + k.slice(1) : ""; };
+function whenOf(sp) {
+  if (sp.kind === "pool") { const o = sp.games.find(o => !o.m.played) || sp.games[0]; return o ? { day: o.m.day, start: o.start, est: o.est, court: o.m.court } : null; }
+  return { day: sp.m.day, start: toMinutes(sp.m.time), est: false, court: sp.m.court };
+}
+function spotText(sp) {
+  if (!sp) return "";
+  if (sp.end !== undefined) return esc(sp.end);
+  const w = whenOf(sp), label = sp.kind === "pool" ? sp.label : sp.m.name || `${sp.d.name} · ${sp.rd ? sp.rd.name : ""}`;
+  const when = w ? [dayShort(w.day), w.start != null ? (w.est ? "about " : "") + clock(w.start) : "", w.court ? courtLabel(w.court) : ""].filter(Boolean).join(" ") : "";
+  return `<b>${esc(label)}</b>${when ? `, <span class="wn-when">${esc(when).replace(/ (Court)/, ", $1")}</span>` : ""}`;
+}
+// Winning every game from spot sp: the last game on the same day
+function winOut(sp) {
+  if (!sp || sp.kind !== "bracket") return null;
+  const day = dayKey(sp.m.day); let cur = sp, last = null;
+  for (let i = 0; i < 6; i++) {
+    const nx = afterMatch(cur.d, cur.g, cur.m, true);
+    if (!nx || nx.kind !== "bracket" || dayKey(nx.m.day) !== day || toMinutes(nx.m.time) == null) break;
+    last = cur = nx;
+  }
+  return last;
+}
+const winOutLine = sp => { const last = winOut(sp); return last ? `<div class="wn-out">Keep winning on ${esc(dayShort(last.m.day) || "that day")}: last game ${spotText(last)}</div>` : ""; };
+// "If you finish 1st -> ..." for a pool that isn't complete
+function poolPaths(d, p) {
+  if (p.complete || !p.advance.length) return "";
+  return `<div class="whatnext"><div class="wn-h">Where each place goes</div>${p.advance.map(a => {
+    const sp = findDest(d, a.adv);
+    return `<div><span class="wn-k">${esc(a.rank || ordinal(a.n))}</span> → ${sp ? spotText(sp) : esc(a.adv)}</div>`;
+  }).join("")}${winOutLine(findDest(d, (p.advance.find(a => a.n === 1) || {}).adv))}</div>`;
+}
+function matchPaths(d, g, m) {
+  if (m.winner) return "";
+  const w = spotText(afterMatch(d, g, m, true)), l = spotText(afterMatch(d, g, m, false));
+  if (!w && !l) return "";
+  return `<div class="whatnext">${w ? `<div><span class="wn-k">Winner</span> → ${w}</div>` : ""}${
+    l ? `<div><span class="wn-k">Loser</span> → ${l}</div>` : ""}${winOutLine(spotOf(d, g, m))}</div>`;
+}
+
 // Every team on the loaded divisions (id = age group + team name) and every match with a team in it
 function clubIndex() {
   const teams = new Map(), games = [];
@@ -1292,7 +1451,7 @@ function clubIndex() {
           vol: volGame(d, { match: volPoolMatch(d, p.name, x.num), a: x.a, b: x.b, day: x.day, court: x.court,
             time: est[i] != null ? `${clock(est[i])} (est.)` : x.time }),
           start: est[i] != null ? est[i] : toMinutes(x.time), est: est[i] != null, court: x.court, sets: x.sets,
-          played: x.played, winner: !x.played ? null : aw > bw ? "a" : bw > aw ? "b" : "split", d });
+          played: x.played, winner: !x.played ? null : aw > bw ? "a" : bw > aw ? "b" : "split", d, ref: { kind: "pool", d, p, m: x } });
       });
     });
     else m.brackets.forEach(g => [...g.rounds, ...(g.extra || [])].forEach(rd => rd.matches.forEach(x => {
@@ -1303,7 +1462,7 @@ function clubIndex() {
       const sets = winner === "b" ? x.sets.map(([u, v]) => [v, u]) : x.sets;
       const label = g.label && !/^champion$/i.test(g.label) && !d.name.toLowerCase().includes(g.label.toLowerCase()) ? ` ${g.label}` : "";
       games.push({ ids: [add(a), add(b)], a, b, where: `${d.name}${label} · ${rd.name}`, day: x.day, time: x.time,
-        start: toMinutes(x.time), est: false, court: x.court, sets, played: !!winner, winner, forfeit: x.forfeit, d,
+        start: toMinutes(x.time), est: false, court: x.court, sets, played: !!winner, winner, forfeit: x.forfeit, d, ref: { kind: "bracket", d, g, m: x },
         vol: volGame(d, { match: volBracketMatch(d, m, x), base: volBracketBase(d, m, x), a, b, day: x.day, court: x.court, time: String(x.time || "").toUpperCase() }) });
     })));
   });
@@ -1428,6 +1587,20 @@ function renderClub() {
     const list = games.filter(g => g.ids.some(id => ours.has(id)))
       .sort((x, y) => (DAYS[dayKey(x.day)] || 9) - (DAYS[dayKey(y.day)] || 9) || (x.start ?? 9999) - (y.start ?? 9999) || x.where.localeCompare(y.where));
     const next = list.find(g => !g.played && g.a && g.b);   // from the earliest-first order either way
+    /* What's next under our games: Winner / Loser for a bracket game still to play; where each place
+       goes under a team's last game in a pool still being played; and after a team's latest bracket
+       game, when nothing later is listed yet, where its result takes it */
+    const lastOf = new Map();   // team id -> its last game in the list; team id + pool -> its last game in that pool
+    list.forEach(g => g.ids.forEach(id => { if (!ours.has(id)) return; lastOf.set(id, g); if (g.ref.kind === "pool") lastOf.set(id + "|" + g.d.id + "|" + g.ref.p.name, g); }));
+    const paths = g => {
+      const r = g.ref, mineIds = g.ids.filter(id => ours.has(id));
+      if (r.kind === "pool") return mineIds.some(id => lastOf.get(id + "|" + g.d.id + "|" + r.p.name) === g) ? poolPaths(r.d, r.p) : "";
+      if (!g.played) return matchPaths(r.d, r.g, r.m);
+      const side = ["a", "b"].find((s, i) => ours.has(g.ids[i]) && lastOf.get(g.ids[i]) === g);
+      if (!side || g.winner === "split") return "";
+      const sp = afterMatch(r.d, r.g, r.m, g.winner === side), t = spotText(sp);
+      return t && sp.end === undefined ? `<div class="whatnext"><span class="wn-k">Next</span> → ${t}</div>` : "";
+    };
     let lastDay = null;
     const items = (latestFirst ? [...list].reverse() : list).map(g => {
       let head = "";
@@ -1447,7 +1620,7 @@ function renderClub() {
         <div class="gwhere">${esc(g.where)}</div>
         <div class="side ${res("a")}${ourSide[0] ? " ours" : ""}"><span class="nm">${nm(g.a)}</span><span class="sets">${setCells(0)}</span></div>
         <div class="side ${res("b")}${ourSide[1] ? " ours" : ""}"><span class="nm">${nm(g.b)}</span><span class="sets">${setCells(1)}</span></div>
-        ${g.forfeit ? `<div class="foot" style="color:var(--muted);font-size:14px;margin-top:6px">${esc(g.forfeit)} didn't show (forfeit)</div>` : ""}${volButton(g.vol)}</li>`;
+        ${g.forfeit ? `<div class="foot" style="color:var(--muted);font-size:14px;margin-top:6px">${esc(g.forfeit)} didn't show (forfeit)</div>` : ""}${paths(g)}${volButton(g.vol)}</li>`;
     }).join("") + (lastDay !== null ? "</ol></section>" : "");
     html += !picked.size ? `<div class="msg"><h2>Pick your teams</h2><p>Tap “Pick your teams”, tick the ones you follow, then Done.</p></div>`
       : list.length ? items : `<div class="msg"><p>No matches yet for these teams.</p></div>`;
@@ -1864,7 +2037,7 @@ function render() {
 
   html += `<div class="pool-head"><h2>${esc(p.name)}</h2>${badge}<span class="where">${esc(courts.join(" and "))}</span>${sheet}</div>
     <div class="grid">
-      <section class="card"><h3>Standings</h3>${table}<p class="note">${esc(standNote)}</p></section>
+      <section class="card"><h3>Standings</h3>${table}<p class="note">${esc(standNote)}</p>${poolPaths(d, p)}</section>
       <section class="card"><h3>Matches</h3><ol class="matches">${matches}</ol></section>
     </div>
 `;
@@ -1908,7 +2081,7 @@ function renderBrackets(s, html, sheet) {
     return `<div class="bmatch${flash}${followed}">
       <div class="mhead"><span>${esc(when)}${m.court ? ", " + courtName(m.court) : ""}</span>${tag}</div>
       ${sideHtml("top")}${sideHtml("bottom")}
-      ${foot ? `<div class="foot">${foot}</div>` : ""}${volButton(volGame(d, { match: volBracketMatch(d, model, m), base: volBracketBase(d, model, m), a: m.top && m.top.team, b: m.bottom && m.bottom.team,
+      ${foot ? `<div class="foot">${foot}</div>` : ""}${followed ? matchPaths(d, g, m) : ""}${volButton(volGame(d, { match: volBracketMatch(d, model, m), base: volBracketBase(d, model, m), a: m.top && m.top.team, b: m.bottom && m.bottom.team,
         day: m.day, court: m.court, time: String(m.time || "").toUpperCase() }))}</div>`;
   };
 
