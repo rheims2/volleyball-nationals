@@ -149,9 +149,10 @@
     .bracket { gap: 10px; } .bmatch { padding: 9px 10px; font-size: 15px; } .round h3 { font-size: 18px; }
     .bmatch .side { font-size: 15px; } .bmatch .seed { min-width: 26px; font-size: 12px; } .bmatch .mhead { font-size: 13px; } }
   /* "Turn your phone sideways" note above a bracket, on upright phones only */
-  .rotate-hint { display: none; align-items: center; gap: 10px; margin: 0 0 14px; padding: 9px 12px; border-radius: 10px; background: var(--tint); color: var(--ink); font-size: 14px; line-height: 1.35; }
+  .rotate-hint { display: none; align-items: center; gap: 10px; white-space: nowrap; overflow: hidden; margin: 0 0 14px; padding: 9px 12px; border-radius: 10px; background: var(--tint); color: var(--ink); font-size: 14px; line-height: 1.35; }
   .rotate-hint svg { flex: none; color: var(--accent-deep); }
   @media (max-width: 700px) and (orientation: portrait) { .rotate-hint { display: flex; } }
+  @media (max-width: 350px) { .rotate-hint { font-size: 13px; gap: 8px; padding: 8px 10px; } }
   .bar { background: var(--dark-2); padding: 10px clamp(14px, 4vw, 36px); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; }
   /* Opened from the Home Screen, the page runs under the iPhone's clock and battery; this navy strip keeps them readable */
   body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: var(--dark); z-index: 5; }
@@ -2111,7 +2112,7 @@ function renderBrackets(s, html, sheet) {
 
   html += `<div class="pool-head"><h2>${esc(g.title)}</h2>${badge}${sheet}</div>
     ${champ}
-    ${g.rounds.length > 1 ? `<div class="rotate-hint"><svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2.5" width="10" height="17" rx="2"/><path d="M11.5 16.5h3"/><path d="M3 15a10 10 0 0 0 7 8.5"/><path d="M7 23.8l3 -.3 -.6-3"/></svg><span>Turn your phone sideways to see the rounds side by side.</span></div>` : ""}
+    ${g.rounds.length > 1 ? `<div class="rotate-hint"><svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2.5" width="10" height="17" rx="2"/><path d="M11.5 16.5h3"/><path d="M3 15a10 10 0 0 0 7 8.5"/><path d="M7 23.8l3 -.3 -.6-3"/></svg><span>Rotate phone to see the full bracket</span></div>` : ""}
     <div class="bracket" style="--rounds:${g.rounds.length}">${rounds}</div>
     ${extra ? `<h2 class="subhead">Placement matches</h2><div class="bracket placements">${extra}</div>` : ""}
     ${results}
