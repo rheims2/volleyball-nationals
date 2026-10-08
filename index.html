@@ -1169,16 +1169,17 @@ async function refresh() {
   try {
     const rows = await fetchRows(parts);
     const next = parseTab(d, rows);
-    const items = next.kind === "brackets" ? next.brackets.filter(g => g.matches.length) : next.pools;
+    // What the buttons in the sticky bar pick: brackets, pools, or a seeding list's divisions (a table has none)
+    const items = next.kind === "brackets" ? next.brackets.filter(g => g.matches.length) : next.kind === "seeding" ? next.blocks : next.pools;
     if (!items.length && !["table", "seeding"].includes(next.kind)) throw new Error("No pools found");
     const keys = snapshot(next);
     const changed = s.prevKeys ? Object.keys(keys).filter(k => s.prevKeys[k] !== undefined && s.prevKeys[k] !== keys[k]) : [];
     if (current().id === d.id) flashKeys = new Set(changed);
     s.prevKeys = keys; s.model = next; s.error = null; s.errorDetail = ""; s.lastUpdated = new Date(); s.saved = false;
     saveTab(d, rows);
-    const keyOf = x => next.kind === "brackets" ? x.key : x.letter;
+    const keyOf = x => next.kind === "pools" ? x.letter : x.key;
     const hasTeam = x => next.kind === "brackets" ? x.teams.some(t => isMine(d, t)) : x.teams.some(t => isMine(d, t.team));
-    if (!s.active || !items.some(x => keyOf(x) === s.active)) {
+    if (items.length && (!s.active || !items.some(x => keyOf(x) === s.active))) {
       const mine = items.find(hasTeam);
       s.active = keyOf(mine || items[0]);
     }
