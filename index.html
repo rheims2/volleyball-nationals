@@ -2065,8 +2065,10 @@ function renderBrackets(s, html, sheet) {
       const t = m[side];
       const won = m.winner === side, lost = m.winner && !won;
       const sets = m.sets.map(([w, l]) => won ? `<span class="w">${w}</span>` : `<span>${l}</span>`).join("");
-      if (!t) return `<div class="side none tbd"><span class="nm"><span class="seed"></span>To be decided</span><span class="sets"></span></div>`;
-      const seed = /^\d+$/.test(t.seed) ? "#" + t.seed : t.seed;
+      // An empty slot still shows its seed ("#2", "8A #3") when the sheet has one
+      const seedText = v => /^\d+$/.test(v) ? "#" + v : v || "";
+      if (!t) return `<div class="side none tbd"><span class="nm"><span class="seed">${esc(seedText(m[side + "Seed"]))}</span>To be decided</span><span class="sets"></span></div>`;
+      const seed = seedText(t.seed);
       return `<div class="side ${won ? "won" : lost ? "lost" : "none"}${mine(t.team) ? " mine" : ""}"><span class="nm"><span class="seed">${esc(seed)}</span>${esc(t.team)}</span><span class="sets">${m.winner ? sets : ""}</span></div>`;
     };
     const when = [m.day, m.time].filter(Boolean).join(" ");
