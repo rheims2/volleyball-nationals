@@ -1323,17 +1323,52 @@ function parseSeeding(rows) {
     const tc = row.findIndex(v => /team\s*names?/i.test(v)); if (tc < 0) return;
     const pc = row.findIndex(v => /^\s*pools?\b/i.test(v)), sc = row.findIndex(v => /^\s*seeds?\b/i.test(v));
     const label = row[tc].replace(/team\s*names?.*$/i, "").trim();
-    const b = { key: "s" + r, label, teams: [] };
+    const b = { key: "s" + r, label, teams: [], start: r, end: r };
     for (let rr = r + 1; rr < rows.length; rr++) {
       const row2 = rows[rr] || [], team = String(row2[tc] || "").trim();
       if (row2.some(v => /team\s*names?/i.test(v))) break;
       if (!team) { if (b.teams.length) break; continue; }
       const pool = clean(row2[pc]).replace(/^pool\s*/i, "").toUpperCase(), seed = clean(row2[sc]).replace(/^#\s*/, "");
-      b.teams.push({ team, pool: pc >= 0 ? pool : "", seed: sc >= 0 ? seed : "" });
+      b.teams.push({ team, pool: pc >= 0 ? pool : "", seed: sc >= 0 ? seed : "" }); b.end = rr;
     }
     if (b.teams.length) blocks.push(b);
   });
-  return { kind: "seeding", pools: [], brackets: [], blocks };
+  /* Pool assignments written below the lists: a "Pool A" cell with that pool's teams under it (or to its
+     right), each with its seed beside it or in front of its name ("1", "#1", "1. Team"). Only names on the
+     lists count, so nothing else on the tab is taken for a team. They fill in POOLS / SEEDS left blank. */
+  const norm = v => String(v || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const byName = new Map(); blocks.forEach(b => b.teams.forEach(t => byName.set(norm(t.team), t)));
+  const seedOf = v => { const m = String(v || "").trim().match(/^#?\s*(\d{1,2})$/); return m ? m[1] : ""; };
+  const split = v => { const m = String(v || "").trim().match(/^#?\s*(\d{1,2})\s*[.):\-]?\s+(.+)$/); return m ? { seed: m[1], name: m[2] } : { seed: "", name: v }; };
+  let assigned = 0, order = 0;
+  const end = Math.max(-1, ...blocks.map(b => b.end));
+  rows.forEach((row, r) => row.forEach((v, c) => {
+    const pm = String(v || "").trim().match(/^pool\s+([a-z0-9]{1,2})\b/i); if (!pm || blocks.some(b => r >= b.start && r <= b.end)) return;
+    const letter = pm[1].toUpperCase();
+    const look = down => {
+      const got = [];
+      for (let k = 1; k <= 10; k++) {
+        const rr = down ? r + k : r, cc = down ? c : c + k, cell = String((rows[rr] || [])[cc] || "").trim();
+        if (!cell) { if (got.length) break; continue; }
+        if (/^pool\s/i.test(cell)) break;
+        const sp = split(cell), t = byName.get(norm(sp.name)) || byName.get(norm(cell));
+        if (!t) { if (seedOf(cell)) continue; if (got.length) break; continue; }
+        // a seed in the cell beside the name (left, or above when the teams run across)
+        // its seed: in front of the name, else the nearest number to its left (a "Seed" column), else above it
+        // when the teams run across (a row of 1 2 3 4), else just right of it
+        let seed = sp.seed;
+        for (let k = cc - 1; !seed && k >= 0 && k >= cc - 10; k--) seed = seedOf((rows[rr] || [])[k]);
+        for (let k = rr - 1; !seed && !down && k >= 0 && k >= rr - 10; k--) seed = seedOf((rows[k] || [])[cc]);
+        got.push({ t, seed: seed || seedOf((rows[rr] || [])[cc + 1]) });
+      }
+      return got;
+    };
+    const got = look(true).length ? look(true) : look(false);
+    got.forEach(({ t, seed }) => { if (!t.pool) t.pool = letter; if (!t.seed && seed) t.seed = seed; t.order = order++; assigned++; });
+  }));
+  // Anything else under the lists is shown as it is, so nothing on the tab is hidden
+  const below = assigned ? [] : tableModel(rows.slice(end + 1)).rows;
+  return { kind: "seeding", pools: [], brackets: [], blocks, below };
 }
 // "Pool C, #2 seed" for a team on a seeding list, or "" if it isn't on one
 const seedText = t => t.pool ? `Pool ${t.pool}${t.seed ? `, #${t.seed} seed` : ""}` : t.seed ? `#${t.seed} seed` : "";
@@ -2146,21 +2181,27 @@ function render() {
 // The seeding list: by pool (#1, #2… in each) once assigned, else the teams in alphabetical order
 function renderSeeding(s, html, sheet) {
   const d = current(), blocks = s.model.blocks;
-  if (!blocks.some(b => b.key === s.active)) s.active = (blocks.find(b => b.teams.some(t => isMine(d, t.team))) || blocks[0]).key;
+  if (!blocks.some(b => b.key === s.active)) s.active = (blocks.find(b => b.teams.some(t => isMine(d, t.team) || clubOf(t.team).toLowerCase() === String(DEFAULT_CLUB).toLowerCase())) || blocks[0]).key;
   const b = blocks.find(x => x.key === s.active);
   $("pools").innerHTML = blocks.length > 1 ? blocks.map(x => `<button type="button" data-pool="${esc(x.key)}" aria-pressed="${x.key === s.active}">${esc(x.label || "Teams")}</button>`).join("") : "";
   const all = blocks.flatMap(x => x.teams.map(t => t.team)).sort((a, c) => a.localeCompare(c));
   const followed = followIn(d, all);
   $("followSel").innerHTML = `<option value="">Follow a team…</option>` + all.map(t => `<option ${t === followed ? "selected" : ""}>${esc(t)}</option>`).join("");
-  const row = t => `<li class="${isMine(d, t.team) ? "mine" : ""}"><span class="sd">${t.seed ? "#" + esc(t.seed) : ""}</span><span class="team">${esc(t.team)}</span></li>`;
+  // Our teams: picked or followed ones, and the club's (My teams' club, else the default club), since in
+  // seeding mode there's no My teams tab to pick them on
+  const clubName = String((settings.club !== undefined ? settings.club : "") || DEFAULT_CLUB).toLowerCase();
+  const ours = team => isMine(d, team) || (!!clubName && clubOf(team).toLowerCase() === clubName);
+  const row = t => `<li class="${ours(t.team) ? "mine" : ""}"><span class="sd">${t.seed ? "#" + esc(t.seed) : ""}</span><span class="team">${esc(t.team)}</span></li>`;
   const pools = [...new Set(b.teams.map(t => t.pool).filter(Boolean))].sort((x, y) => x.localeCompare(y, undefined, { numeric: true }));
-  const bySeed = (x, y) => (parseInt(x.seed, 10) || 99) - (parseInt(y.seed, 10) || 99) || x.team.localeCompare(y.team);
+  const bySeed = (x, y) => (parseInt(x.seed, 10) || 99) - (parseInt(y.seed, 10) || 99) || (x.order ?? 999) - (y.order ?? 999) || x.team.localeCompare(y.team);
   const open = b.teams.filter(t => !t.pool);
   const body = pools.length
     ? `<div class="seedpools">${pools.map(p => `<section class="card"><h3>Pool ${esc(p)}</h3><ol class="seedlist">${b.teams.filter(t => t.pool === p).sort(bySeed).map(row).join("")}</ol></section>`).join("")}</div>
       ${open.length ? `<section class="card"><h3>Not placed yet</h3><ol class="seedlist">${open.map(row).join("")}</ol></section>` : ""}`
     : `<section class="card"><h3>${b.teams.length} teams</h3><p class="seednote">Pools and seeds aren't posted yet. They'll show here by pool once the tournament fills them in.</p><ol class="seedlist">${b.teams.map(row).join("")}</ol></section>`;
-  html += `<div class="pool-head"><h2>${esc(b.label ? b.label + " seeding" : d.name)}</h2>${sheet}</div>${body}`;
+  const below = s.model.below && s.model.below.length ? `<section class="card seedtable"><h3>Also on this tab</h3><div class="scroll"><table><tbody>${
+    s.model.below.map(r => `<tr class="${r.some(v => isMine(d, v)) ? "mine" : ""}">${r.map(v => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></section>` : "";
+  html += `<div class="pool-head"><h2>${esc(b.label ? b.label + " seeding" : d.name)}</h2>${sheet}</div>${body}${below}`;
   $("main").innerHTML = html;
 }
 
