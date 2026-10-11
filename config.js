@@ -43,7 +43,7 @@ window.VIEWER_CONFIG = {
 
   // The club's volunteer sign-up sheet for Nationals, read for the Volunteer buttons on each game.
   // Blank ("") until there is one, so no Volunteer buttons show (the Regionals sheet isn't used here).
-  volunteerSheet: "",
+  volunteerSheet: "https://docs.google.com/spreadsheets/d/10Uscq2SWXCduCu_V8-e7s6wfoffJPrrwMakduNj6jkY/edit?gid=601847258#gid=601847258",
 
   // The volunteer sheet's Apps Script web app (see volunteer-script.gs), which saves sign-ups made on
   // the page. Leave it blank ("") and the Volunteer buttons only show the spots and link to the sheet.
