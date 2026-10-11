@@ -962,13 +962,21 @@ async function eachLimit(items, n, fn) {
 
 /* Division links on the index: "G18u D1", "GJV", "B16u"... Links can be a cell
    hyperlink, a rich-text link, or a HYPERLINK() formula. */
-function indexLinks(data, gid) {
+/* The index tab to read: the link's tab (#gid=); else, of the visible tabs with division links, the one whose
+   name has the newest year ("2026 Nationals" over "2024 Nationals"), else the one with the most links. An index spreadsheet keeps
+   older years' tabs, often hidden, sometimes first, and they can have more links than this year's. */
+function indexTab(data, gid) {
   const sheets = data.sheets || [];
   const exact = sheets.find(x => String(x.properties.sheetId) === gid);
-  if (exact || sheets.length < 2) return tabLinks(exact || sheets[0]);
-  // No tab in the link (or not found): the tab with the most division links (an index can keep old tabs first)
-  return sheets.map(tabLinks).reduce((best, l) => l.length > best.length ? l : best, []);
+  if (exact) return exact;
+  const year = t => Math.max(0, ...((String(t.properties.title).match(/\b20\d\d\b/g) || []).map(Number)));
+  const usable = sheets.filter(t => tabLinks(t).length);
+  const visible = usable.filter(t => !t.properties.hidden);
+  const pool = visible.length ? visible : usable;
+  const newest = Math.max(0, ...pool.map(year));
+  return (newest ? pool.find(t => year(t) === newest) : pool.reduce((b, t) => !b || tabLinks(t).length > tabLinks(b).length ? t : b, null)) || sheets[0];
 }
+function indexLinks(data, gid) { return tabLinks(indexTab(data, gid)); }
 function tabLinks(tab) {
   const out = [], seen = new Set();
   ((tab && tab.data) || []).forEach(g => (g.rowData || []).forEach(row => (row.values || []).forEach(v => {
@@ -1022,8 +1030,8 @@ const tabType = t => /seeding|play[\s-]?in/i.test(t) ? "seeding" : /pool|qualif/
 
 async function discoverDivisions(progress) {
   const ip = linkParts(INDEX_SHEET);
-  const index = await sheetsApi(ip.id, "sheets(properties(sheetId,title),data(rowData(values(formattedValue,hyperlink,textFormatRuns(format(link(uri))),userEnteredValue(formulaValue)))))");
-  const links = indexLinks(index, ip.gid);
+  const index = await sheetsApi(ip.id, "sheets(properties(sheetId,title,hidden),data(rowData(values(formattedValue,hyperlink,textFormatRuns(format(link(uri))),userEnteredValue(formulaValue)))))");
+  const tab = indexTab(index, ip.gid), links = tabLinks(tab);
   if (!links.length) throw new Error("no division links on the index");
   const failed = [], candidates = []; let event = "";
   // Tab lists: one read per division spreadsheet (the API can't batch across spreadsheets)
@@ -1054,7 +1062,7 @@ async function discoverDivisions(progress) {
     if (ok[i] === true) divs.push({ id: d.id, type: d.type, name: d.name, url: d.url });
     else failed.push({ name: d.name, tab: d.tab, book: d.book, url: d.url, reason: ok[i].error.message });
   });
-  return { at: Date.now(), divs, failed, event, books: links.length };
+  return { at: Date.now(), divs, failed, event, books: links.length, indexTab: tab && tab.properties ? tab.properties.title : "" };
 }
 
 const readBackoff = () => { try { return JSON.parse(localStorage.getItem(KEY + "-backoff")) || {}; } catch (e) { return {}; } };
@@ -2328,7 +2336,7 @@ function renderListStatus() {
     <p class="row"><button class="refresh" type="button" id="copyRows">Copy rows</button>
       ${API_KEY ? (discovery ? `<span><strong>Reading the index…</strong> ${discovery.total ? `checked ${discovery.done} of ${discovery.total} tabs` : ""}</span>`
         : `<button class="ghost" type="button" id="updateList" ${wait ? "disabled" : ""}>Build rows from the NCHVC index</button>`) : ""}</p>
-    <p style="color:var(--muted);font-size:14px">${discovered === SAVED_LIST ? `These rows come from the saved index discovery (${esc(when(discovered.at))}).` : `Rebuilt from the NCHVC index ${esc(when(discovered.at))} (kept in this browser).`}
+    <p style="color:var(--muted);font-size:14px">${discovered === SAVED_LIST ? `These rows come from the saved index discovery (${esc(when(discovered.at))}).` : `Rebuilt from the NCHVC index ${esc(when(discovered.at))}${discovered.indexTab ? `, tab “${esc(discovered.indexTab)}”` : ""} (kept in this browser).`}
       ${API_KEY ? "Rebuilding uses the Google Sheets API (17 reads) and is only needed if the index changes, such as next year." : ""}
       ${wait ? ` ${paused.hitLimit ? "Google asked us to slow down, so rebuilding" : "After that failure, rebuilding"} is paused for about ${wait} minute${wait === 1 ? "" : "s"}.` : ""}</p>
     ${failure && !discovery ? `<p style="color:var(--bad)">Rebuilding failed: ${esc(failure)}</p>` : ""}
