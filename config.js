@@ -36,7 +36,7 @@ window.VIEWER_CONFIG = {
 
   // The NCHVC bracket index the division list is built from (the 2026 Nationals pools and brackets index, added 2026-10-11; the 2025 one was 1ONzz5XqL-buAxvHXNHfuTRtDayzaM10Cy7KlOdt5GL0).
   // Change it when a new index is published, then rebuild the rows on the setup page (the viewer's address plus #setup).
-  indexSheet: "https://docs.google.com/spreadsheets/d/1Uq8uFxIn-y3YwMAzIwCft1l4zgfFA0E7rKGuIBQvo5U/edit",
+  indexSheet: "https://docs.google.com/spreadsheets/d/1Uq8uFxIn-y3YwMAzIwCft1l4zgfFA0E7rKGuIBQvo5U/edit?gid=760812890#gid=760812890",
 
   // The club the My teams tab starts on (a visitor can pick another; blank starts on "Pick your club").
   defaultClub: "Des Moines Eclipse",
