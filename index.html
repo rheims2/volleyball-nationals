@@ -1069,6 +1069,10 @@ function setBackoff(hitLimit, error) {
 // Why rebuilding failed, in words; a key that doesn't accept this site's address says which address to add
 function discoveryHelp(msg, status) {
   if (status === 429) return "Google asked us to slow down.";
+  // Some browsers (Safari on iPhone) send only the site ("https://rheims2.github.io/") whatever the page asks,
+  // so the key has to allow the whole site, not just this page's folder
+  const sentSite = new RegExp("referer " + location.origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/? ", "i").test(msg);
+  if (sentSite) return msg + ` This browser sent only the site's address, so the API key has to allow ${location.origin}/* (add it to the key's allowed websites in Google Cloud Console; a change there can take 5 minutes), or rebuild from a computer in Chrome.`;
   if (/referer|referrer/i.test(msg) || status === 403) return msg + ` The API key doesn't accept this site's address: add ${location.origin + location.pathname.replace(/[^/]*$/, "")}* to the key's allowed websites in Google Cloud Console (a change there can take 5 minutes to apply).`;
   return msg;
 }
