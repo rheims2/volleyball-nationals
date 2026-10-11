@@ -58,7 +58,9 @@
   .info ul { margin: 0 0 10px; padding-left: 22px; line-height: 1.5; }
   .info .addr { font-size: 17px; }
   .info .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-  .info .btns a { text-decoration: none; display: inline-block; padding: 10px 18px; font-size: 17px; line-height: 1.2; }
+  .info .btns a { text-decoration: none; display: inline-block; padding: 9px 14px; font-size: 16px; line-height: 1.2; }
+  @media (max-width: 600px) { .info .btns { gap: 6px; } .info .btns a { flex: 1 1 auto; text-align: center; padding: 8px 8px; font-size: 15px; white-space: nowrap; } }
+  .info .btns { margin-bottom: 10px; }
   .info figure { margin: 4px 0 10px; }
   .info img { display: block; max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
   .info figcaption { color: var(--muted); font-size: 13px; margin-top: 4px; }
@@ -1661,12 +1663,21 @@ function renderInfo() {
     const prev = out[out.length - 1];
     if (prev && !prev.image && !prev.link && !r.image && !r.link && r.text) prev.text += "\n" + r.text; else out.push({ ...r });
     return out; }, []); });
-  html += sections.map(sec => `<section>${sec.name ? `<h2>${esc(sec.name)}</h2>` : ""}${sec.rows.map(r => {
-    const img = r.image && imageSrc(r.image), link = safeUrl(r.link), open = safeUrl(r.image);
-    return (r.text ? infoText(r.text) : "")
-      + (img ? `<figure><a href="${esc(open || img)}" target="_blank" rel="noopener"><img src="${esc(img)}" alt="${esc(r.text || sec.name || "Picture")}" loading="lazy"></a><figcaption>Tap the picture to open it full size.</figcaption></figure>` : "")
-      + (link ? `<div class="btns"><a class="ghost" href="${esc(link)}" target="_blank" rel="noopener">${esc(r.label || "Open " + (sec.name || "link"))} ↗</a></div>` : "");
-  }).join("")}</section>`).join("");
+  /* Links side by side: a row with only a link (no text or picture) joins the buttons of the row above,
+     so a hotel's Website / Map / Book buttons sit in one row (wrapping when they don't fit) */
+  html += sections.map(sec => {
+    let out = "", btns = [];
+    const flush = () => { if (btns.length) out += `<div class="btns">${btns.join("")}</div>`; btns = []; };
+    sec.rows.forEach(r => {
+      const img = r.image && imageSrc(r.image), link = safeUrl(r.link), open = safeUrl(r.image);
+      if (r.text || img) flush();
+      if (r.text) out += infoText(r.text);
+      if (img) out += `<figure><a href="${esc(open || img)}" target="_blank" rel="noopener"><img src="${esc(img)}" alt="${esc(r.text || sec.name || "Picture")}" loading="lazy"></a><figcaption>Tap the picture to open it full size.</figcaption></figure>`;
+      if (link) btns.push(`<a class="ghost" href="${esc(link)}" target="_blank" rel="noopener">${esc(r.label || "Open " + (sec.name || "link"))} ↗</a>`);
+    });
+    flush();
+    return `<section>${sec.name ? `<h2>${esc(sec.name)}</h2>` : ""}${out}</section>`;
+  }).join("");
   if (!sections.length) html += `<div class="msg"><p>${info.error ? "The information sheet couldn't be read right now. Tap Refresh to try again."
     : INFO_PARTS && info.busy ? "Loading…" : "Rules, play format and the court layout will be posted here."}</p></div>`;
   $("main").innerHTML = `<div class="info">${html}</div>`;
