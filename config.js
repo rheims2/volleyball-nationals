@@ -34,9 +34,9 @@ window.VIEWER_CONFIG = {
   // Sheets API and to this site's address in Google Cloud Console.
   sheetsApiKey: "AIzaSyBO9bvtoXLMAua2DZyNit1WphNDnh9eGwE",
 
-  // The NCHVC bracket index the division list is built from (the 2025 Nationals index until the 2026 one is published).
+  // The NCHVC bracket index the division list is built from (the 2026 Nationals pools and brackets index, added 2026-10-11; the 2025 one was 1ONzz5XqL-buAxvHXNHfuTRtDayzaM10Cy7KlOdt5GL0).
   // Change it when a new index is published, then rebuild the rows on the setup page (the viewer's address plus #setup).
-  indexSheet: "https://docs.google.com/spreadsheets/d/1ONzz5XqL-buAxvHXNHfuTRtDayzaM10Cy7KlOdt5GL0/edit?gid=1891963095#gid=1891963095",
+  indexSheet: "https://docs.google.com/spreadsheets/d/1Uq8uFxIn-y3YwMAzIwCft1l4zgfFA0E7rKGuIBQvo5U/edit",
 
   // The club the My teams tab starts on (a visitor can pick another; blank starts on "Pick your club").
   defaultClub: "Des Moines Eclipse",

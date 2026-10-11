@@ -851,12 +851,12 @@ function parseConfig(rows) {
   const opt = (r, c) => c >= 0 ? (r[c] || "").trim() : "";
   // rows keeps every entry, hidden ones and ones without a link too, so they can
   // hide, rename or retag divisions found on the NCHVC index
-  const entries = []; let event = "", seeding = false;
+  const entries = []; let event = "", seeding = false, modeRow = false;
   rows.slice(hr + 1).forEach(r => {
     const stage = low(r[cStage]), name = (r[cName] || "").trim(), link = (r[cLink] || "").trim();
     if (/^event/.test(stage)) { event = name; return; }
     // "Mode" | "Seeding" | | Show Yes / No: seeding mode for everyone (Seeding and Info tabs only)
-    if (/^mode/.test(stage)) { if (/seed/i.test(name)) seeding = !(cShow >= 0 && /^(no|n|false|off|hide|hidden)$/.test(low(r[cShow]))); return; }
+    if (/^mode/.test(stage)) { if (/seed/i.test(name)) { seeding = !(cShow >= 0 && /^(no|n|false|off|hide|hidden)$/.test(low(r[cShow]))); modeRow = true; } return; }
     if (!stage && !name && !link) return;
     const type = /seed/.test(stage) ? "seeding" : /bracket/.test(stage) ? "brackets" : /pool/.test(stage) ? "pools" : null;
     if (!type || !name) return;
@@ -866,7 +866,7 @@ function parseConfig(rows) {
       gender: /^b/i.test(g) ? "Boys" : /^g/i.test(g) ? "Girls" : g, age: opt(r, cAge).toUpperCase(), level: opt(r, cLevel), bracket: opt(r, cBracket) });
   });
   const visible = entries.filter(e => !e.hidden);
-  return { divs: visible.filter(e => linkParts(e.url)), rows: entries, event, seeding, skipped: visible.filter(e => !linkParts(e.url)).map(e => e.name) };
+  return { divs: visible.filter(e => linkParts(e.url)), rows: entries, event, seeding, modeRow, skipped: visible.filter(e => !linkParts(e.url)).map(e => e.name) };
 }
 const divId = (type, name) => type + ":" + name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 const noTags = (k, v) => k === "_tags" ? undefined : v;
@@ -924,11 +924,14 @@ function sheetRows(found) {
   const books = new Set([...found.divs, ...(found.failed || [])].map(d => (linkParts(d.url) || {}).id).filter(Boolean));
   const sameEvent = rows.some(r => books.has((linkParts(r.url) || {}).id));
   const out = [["Stage", "Division", "Link", "Show", "Gender", "Age", "Level", "Bracket"], ["Event", (sameEvent && configDivs.event) || found.event || "", "", "", "", "", "", ""]];
+  // The seeding-mode switch carries over as it is
+  if (configDivs && configDivs.modeRow) out.push(["Mode", "Seeding", "", configDivs.seeding ? "Yes" : "No", "", "", "", ""]);
   const add = (d, show) => { const r = mine(d);
     out.push([stage(d.type), r ? r.name : d.name, d.url, r && r.hidden ? "No" : show, r ? r.gender : "", r ? r.age : "", r ? r.level : "", r ? r.bracket : ""]); };
   found.divs.forEach(d => add(d, "Yes"));
   (found.failed || []).filter(f => f.url).forEach(f => add({ type: tabType(f.tab), name: f.name, url: f.url }, "No"));
-  rows.forEach((r, k) => { if (!used.has(k) && books.has((linkParts(r.url) || {}).id) && !out.some(o => sameTab(o[2], r.url))) out.push([stage(r.type), r.name, r.url, r.hidden ? "No" : "Yes", r.gender, r.age, r.level, r.bracket]); });
+  // Rows for other tabs of the index's spreadsheets stay, and so do Seeding rows, whose tabs the index doesn't link
+  rows.forEach((r, k) => { if (!used.has(k) && (books.has((linkParts(r.url) || {}).id) || r.type === "seeding") && !out.some(o => sameTab(o[2], r.url))) out.push([stage(r.type), r.name, r.url, r.hidden ? "No" : "Yes", r.gender, r.age, r.level, r.bracket]); });
   return out.map(r => r.map(v => String(v || "").replace(/[\t\n]/g, " ")).join("\t")).join("\n");
 }
 
@@ -961,7 +964,12 @@ async function eachLimit(items, n, fn) {
    hyperlink, a rich-text link, or a HYPERLINK() formula. */
 function indexLinks(data, gid) {
   const sheets = data.sheets || [];
-  const tab = sheets.find(x => String(x.properties.sheetId) === gid) || sheets[0];
+  const exact = sheets.find(x => String(x.properties.sheetId) === gid);
+  if (exact || sheets.length < 2) return tabLinks(exact || sheets[0]);
+  // No tab in the link (or not found): the tab with the most division links (an index can keep old tabs first)
+  return sheets.map(tabLinks).reduce((best, l) => l.length > best.length ? l : best, []);
+}
+function tabLinks(tab) {
   const out = [], seen = new Set();
   ((tab && tab.data) || []).forEach(g => (g.rowData || []).forEach(row => (row.values || []).forEach(v => {
     const label = String(v.formattedValue || "").trim();
