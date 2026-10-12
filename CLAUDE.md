@@ -75,7 +75,7 @@ Parsed by labels, not fixed cell addresses. Each pool ends with a "Pool A Result
 
 - Rows with "Match #n", court, time ("4:15 PM", "Rolling", or with the day in front, "FRI 10:00 AM", as on the 2025 Nationals Iron and Consolation pools whose "Days:" header is "F/S": the day is taken from it), team A, "vs", team B. Consolation pools put a "Team 3" placeholder beside each name; it's skipped. Before seeding the names are blank and show as "To be decided".
 - "Seed" header row with opponent team names across and a "Sets" column. Each team row: seed number, team, +/-; then 3-column blocks per opponent (diff, team, opponent), with "Set 1"/"Set 2" rows below holding own score and opponent score. Negative numbers appear as "(29)".
-- "Pool X Results" row (contains "complete" when final), then "Rank", "Team", "Advancement" header and ranked rows. A long note (e.g. the Team USA advancement rule) may sit in the Rank row.
+- "Pool X Results" row (contains "complete" when final; the 2026 Nationals sheets say "Complete" before play starts, so a pool, or a bracket, counts as final only once at least one of its games has a score), then "Rank", "Team", "Advancement" header and ranked rows. A long note (e.g. the Team USA advancement rule) may sit in the Rank row.
 - Standings are computed from set scores (sets won, point diff) and labeled unofficial until the pool is complete; then the official order and advancement are shown.
 
 ## Bracket play sheet layout (parser: `parseBrackets`)

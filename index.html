@@ -545,6 +545,8 @@ function parsePools(rows) {
       m.sets = (pool.grid[m.a] && pool.grid[m.a][m.b]) || [];
       m.played = m.sets.length > 0;
     });
+    // The 2026 Nationals sheets say "Complete" on every Results row before a ball is played: final only once games are
+    if (!pool.matches.some(m => m.played)) pool.complete = false;
     const firstOpen = pool.matches.find(m => !m.played);
     if (firstOpen) firstOpen.next = true;
     pool.state = pool.complete ? "final" : pool.matches.some(m => m.played) ? "live" : "new";
@@ -760,7 +762,7 @@ function parseBrackets(rows) {
       g.results = Object.keys(places).map(Number).sort((a, b) => a - b).map(n => ({ rank: String(n), team: places[n], adv: "" }));
     }
     const allPlayed = g.qualifier && g.matches.every(m => m.winner);
-    g.state = g.complete || g.champion || allPlayed ? "final" : g.matches.some(m => m.winner) ? "live" : "new";
+    g.state = (g.complete && g.matches.some(m => m.winner)) || g.champion || allPlayed ? "final" : g.matches.some(m => m.winner) ? "live" : "new";
     const firstOpen = all.flatMap(rd => rd.matches).find(m => !m.winner && m.top && m.bottom);
     if (firstOpen) firstOpen.next = true;
     /* Where each match's winner and loser play next in this bracket (nextWin / nextLose): by round kind
