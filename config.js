@@ -18,7 +18,7 @@ window.VIEWER_CONFIG = {
 
   // Minutes per game for "Est." start times of rolling matches (Thursday pool play at
   // 2026 Nationals: 8:00, 8:55, 9:50… so 55). Unset means 45.
-  matchMinutes: 55,
+  matchMinutes: 45,
 
   // The Info tab's content: a tab named "Info" in the divisions sheet, with a header row
   // Section | Text | Link | Link text | Image, for rules, play format, the court layout and so on.

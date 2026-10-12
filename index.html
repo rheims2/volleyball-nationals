@@ -1834,7 +1834,7 @@ function updateStatus() {
    the previous match on the same court (its listed time, or its own estimate), or after
    the previous match in the pool when there's no court. Returns the estimates (minutes
    after midnight) by match, null where the sheet gives a time. */
-// Minutes a rolling match takes (config.js matchMinutes; the 2026 Nationals schedule rolls at 55)
+// Minutes a rolling match takes (config.js matchMinutes; the master schedule rolls at 55, but pool play runs closer to 45)
 const MATCH_MINUTES = +VIEWER_CONFIG.matchMinutes || 45;
 const toMinutes = t => { const x = String(t).match(/(\d{1,2}):(\d{2})\s*([ap])\.?\s*m/i); return x ? (+x[1] % 12 + (/p/i.test(x[3]) ? 12 : 0)) * 60 + +x[2] : null; };
 const clock = n => { const h = Math.floor(n / 60) % 24; return `${h % 12 || 12}:${String(n % 60).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`; };
