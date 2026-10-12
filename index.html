@@ -462,7 +462,8 @@ function parsePools(rows) {
       const row = rows[r] || [];
       for (let c = 0; c < row.length; c++) {
         const v = row[c];
-        const dayHeader = v.match(/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*\s+schedule/i);
+        // "Friday Schedule-", or a weekday anywhere in a schedule header ("Pool A Schedule- FRI", "FRI Pool A Schedule")
+        const dayHeader = /schedule/i.test(v) && v.match(/\b(mon|tue|wed|thu|fri|sat|sun)(?:day|s|nesday|rsday|urday)?\b/i);
         if (dayHeader) { day = dayHeader[1]; break; }
         if (/^Match\s*#\s*\d+/i.test(v)) {
           const vs = row.findIndex((x, k) => k > c && /^vs\.?$/i.test(x));
@@ -1604,7 +1605,7 @@ function clubIndex() {
         if (!x.a && !x.b) return;
         const aw = x.sets.filter(([u, v]) => u > v).length, bw = x.sets.length - aw;
         games.push({ ids: [add(x.a), add(x.b)], a: x.a, b: x.b, where: `${d.name} · ${p.name}`, day: x.day, time: x.time,
-          vol: volGame(d, { match: volPoolMatch(d, p.name, x.num), a: x.a, b: x.b, day: x.day, court: x.court,
+          vol: volGame(d, { pool: true, match: volPoolMatch(d, p.name, x.num), a: x.a, b: x.b, day: x.day, court: x.court,
             time: est[i] != null ? `${clock(est[i])} (est.)` : x.time }),
           start: est[i] != null ? est[i] : toMinutes(x.time), est: est[i] != null, court: x.court, sets: x.sets,
           played: x.played, winner: !x.played ? null : aw > bw ? "a" : bw > aw ? "b" : "split", d, ref: { kind: "pool", d, p, m: x } });
@@ -1864,12 +1865,20 @@ const vol = { rows: [], roles: [], at: 0, busy: false, header: null, error: "" }
 function volCheck() {
   const keys = new Set();
   divisions().forEach(d => { const m = slot(d.id).model; if (!m) return;
-    (m.pools || []).forEach(p => p.matches.forEach(x => { const match = volPoolMatch(d, p.name, x.num); keys.add(volNorm(match)); volGame(d, { match, a: x.a, b: x.b, day: x.day }); }));
+    (m.pools || []).forEach(p => p.matches.forEach(x => { const match = volPoolMatch(d, p.name, x.num); keys.add(volNorm(match)); volGame(d, { pool: true, match, a: x.a, b: x.b, day: x.day }); }));
     (m.brackets || []).forEach(g => g.matches.forEach(x => { const match = volBracketMatch(d, m, x), base = volBracketBase(d, m, x); keys.add(volNorm(match)); keys.add(volNorm(base));
       volGame(d, { match, base, a: x.top && x.top.team, b: x.bottom && x.bottom.team, day: x.day }); }));
   });
   keys.delete("");
+  // who each of our teams plays on the loaded tabs ("16UB1" -> OK Trident (OK), Fri), for rows that don't match
+  const plays = {};
+  divisions().forEach(d => { const m = slot(d.id).model; if (!m) return;
+    const add = (a, b, day) => [[a, b], [b, a]].forEach(([us, them]) => { if (us && them && clubOf(us).toLowerCase() === VOL_CLUB.toLowerCase()) (plays[volTeamCode(d, us)] = plays[volTeamCode(d, us)] || []).push(`${them}${dayShort(day) ? " (" + dayShort(day) + ")" : day ? " (" + day + ")" : ""}`); });
+    (m.pools || []).forEach(p => p.matches.forEach(x => add(x.a, x.b, x.day)));
+    (m.brackets || []).forEach(g => g.matches.forEach(x => add(x.top && x.top.team, x.bottom && x.bottom.team, x.day)));
+  });
   const matched = vol.rows.filter(r => keys.has(r.key)), missed = vol.rows.filter(r => !keys.has(r.key));
+  missed.forEach(r => { r.hint = r.match ? "" : plays[r.team] ? `in the app ${r.team} plays ${[...new Set(plays[r.team])].join(", ")}` : `no ${r.team} games on the loaded tabs (Eclipse Team code like 16UG, 16UB1, JVG)`; });
   return { matched, missed, sample: [...keys].length ? divisions().map(d => { const m = slot(d.id).model; const p = m && m.pools && m.pools[0]; return p && p.matches[0] ? volPoolMatch(d, p.name, p.matches[0].num) : ""; }).find(Boolean) : "" };
 }
 const VOL_INFO = ["day", "time", "court", "eclipse team", "team", "home/away", "opponent", "match"];
@@ -1898,17 +1907,21 @@ function volGame(d, g) {
   /* A row with no Match name (2026 Nationals sheet: Day, Time, Court, Eclipse Team, Opponent) is the game where
      its Eclipse Team ("16UG") plays its Opponent, on its Day when both say */
   if (!volRowsFor(key).length) {
-    const same = (x, y) => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "") === String(y || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const same = (x, y) => volOppKey(x) === volOppKey(y);
     [[g.a, g.b], [g.b, g.a]].forEach(([us, them]) => {
       if (!us || !them || clubOf(us).toLowerCase() !== VOL_CLUB.toLowerCase()) return;
       const code = volTeamCode(d, us);
-      vol.rows.filter(r => !r.match && !r.key && r.team === code && same(r.opp, them) && (!r.day || !g.day || dayKey(r.day) === dayKey(g.day)))
-        .slice(0, 1).forEach(r => { r.key = key; });
+      // the same day first (it counts only when both say a weekday: "F/S" says neither), then any day, since
+      // a pool sheet's day can be off ("Days: Thu" on a tab whose pools play Friday) and a pool meets a team once
+      const open = vol.rows.filter(r => !r.match && !r.key && r.team === code && same(r.opp, them));
+      (open.filter(r => !(DAYS[dayKey(r.day)] && DAYS[dayKey(g.day)] && dayKey(r.day) !== dayKey(g.day)))[0] || (g.pool && open[0]) || { }).key = key;
     });
   }
   return volRowsFor(key).length ? { key, match: g.match } : null;
 }
 const volRowId = r => [r.team, r.opp, r.day, r.time].join("|").toLowerCase();
+// An opponent's name compared without its state ("OK Trident (OK)" = "OK Trident"), spaces or punctuation
+const volOppKey = v => String(v || "").toLowerCase().replace(/\([^)]*\)/g, "").replace(/[^a-z0-9]/g, "");
 // A pool match's Match name, as the sheet writes it: "G16u Pool A M1"
 const volPoolMatch = (d, poolName, num) => volShort(d) && num ? `${volShort(d)} ${poolName} M${num}` : "";
 /* A bracket match's Match name: its name on the tab ("G18u Gold Semi"), numbered when several
@@ -2245,7 +2258,7 @@ function render() {
     return `<li class="${(mine(m.a) || mine(m.b)).trim()}${fl("m" + m.num)}">
       <div class="mhead"><span>Match ${esc(m.num)}: ${day}${when}${where}</span>${tag}</div>
       <div class="side ${res[0]}"><span class="nm">${m.a ? esc(m.a) : `<em style="color:var(--muted);font-weight:400">To be decided</em>`}</span><span class="sets">${setCells(0)}</span></div>
-      <div class="side ${res[1]}"><span class="nm">${m.b ? esc(m.b) : `<em style="color:var(--muted);font-weight:400">To be decided</em>`}</span><span class="sets">${setCells(1)}</span></div>${volButton(volGame(d, { match: volPoolMatch(d, p.name, m.num), a: m.a, b: m.b, day: m.day, court: m.court,
+      <div class="side ${res[1]}"><span class="nm">${m.b ? esc(m.b) : `<em style="color:var(--muted);font-weight:400">To be decided</em>`}</span><span class="sets">${setCells(1)}</span></div>${volButton(volGame(d, { pool: true, match: volPoolMatch(d, p.name, m.num), a: m.a, b: m.b, day: m.day, court: m.court,
         time: estimates[i] != null ? `${clock(estimates[i])} (est.)` : m.time }))}</li>`;
   }).join("");
 
@@ -2415,7 +2428,7 @@ function volSetupCard() {
   return `<div class="msg"><h2>Volunteer sheet</h2>
     <p>${vol.rows.length} game rows read (jobs: ${esc(vol.roles.join(", ") || "none")}). <strong>${matched.length}</strong> match a game in the app and get a Volunteer button${seedingMode() ? " (on My teams and Pool play, which are hidden while seeding mode is on)" : ""}.${link}</p>
     ${missed.length ? `<p>${missed.length} don't match any game${missed.some(r => r.match) && sample ? `; Match names should look like <strong>${esc(sample)}</strong>` : missed.some(r => !r.match) ? " (a row without a Match name needs its Eclipse Team code, like 16UG or 16UB2, and the Opponent spelled as on the pool sheet; teams not yet on a loaded pool sheet can't match)" : ""}:</p>
-      <ul style="margin:0 0 8px;padding-left:20px;font-size:14px">${missed.slice(0, 8).map(r => `<li>${r.match ? `${esc(r.match)}${r.team ? ` (${esc(r.team)})` : ""}` : `${esc([r.day, r.time].filter(Boolean).join(" "))}: ${esc(r.team)} vs ${esc(r.opp)}`}</li>`).join("")}${missed.length > 8 ? `<li>… and ${missed.length - 8} more</li>` : ""}</ul>` : ""}
+      <ul style="margin:0 0 8px;padding-left:20px;font-size:14px">${missed.slice(0, 8).map(r => `<li>${r.match ? `${esc(r.match)}${r.team ? ` (${esc(r.team)})` : ""}` : `${esc([r.day, r.time].filter(Boolean).join(" "))}: ${esc(r.team)} vs ${esc(r.opp)}${r.hint ? `<br><span style="color:var(--muted)">${esc(r.hint)}</span>` : ""}`}</li>`).join("")}${missed.length > 8 ? `<li>… and ${missed.length - 8} more</li>` : ""}</ul>` : ""}
     <p style="color:var(--muted);font-size:14px">Games only match once their division's tab has loaded; open My teams first if this looks short.</p></div>`;
 }
 function renderSetup() {
