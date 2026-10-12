@@ -5,8 +5,9 @@
  * Web app, Execute as: Me, Who has access: Anyone. Put the web app URL in config.js as
  * volunteerScript.
  *
- * The viewer sends { match, team, role, name }. The script finds the row whose Match and
- * Eclipse Team match, and writes the name into that job's column only if the cell is empty,
+ * The viewer sends { match, team, role, name, day, time, opp }. The script finds the row whose Match and
+ * Eclipse Team match (or, in a sheet with no Match column, whose Eclipse Team, Opponent, Day and Time
+ * match), and writes the name into that job's column only if the cell is empty,
  * so nobody can overwrite or clear a sign-up from the page. "N/A" cells are jobs that team
  * doesn't cover and are never filled.
  *
@@ -27,6 +28,12 @@
 var INFO = ["day", "time", "court", "eclipse team", "team", "home/away", "opponent", "match"];
 
 function norm(v) { return String(v || "").toLowerCase().replace(/pool/g, "").replace(/[^a-z0-9]/g, ""); }
+
+// The header row: it has a Match column, or (no Match column) Eclipse Team and Opponent
+function isHeader(row) {
+  var low = row.map(function (v) { return String(v).trim().toLowerCase(); });
+  return low.indexOf("match") >= 0 || (low.indexOf("eclipse team") >= 0 && low.indexOf("opponent") >= 0);
+}
 
 function reply(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
@@ -95,9 +102,7 @@ function doPost(e) {
       var sh = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
       var dat = sh.getDataRange().getDisplayValues();
       var hh = -1;
-      for (var k = 0; k < dat.length && hh < 0; k++) {
-        if (dat[k].some(function (v) { return String(v).trim().toLowerCase() === "match"; })) hh = k;
-      }
+      for (var k = 0; k < dat.length && hh < 0; k++) { if (isHeader(dat[k])) hh = k; }
       if (hh < 0) return reply({ ok: false, error: "nomatchcolumn" });
       return addRows(sh, dat, hh, dat[hh].map(function (v) { return String(v).trim().toLowerCase(); }), req.rows);
     }
@@ -109,9 +114,7 @@ function doPost(e) {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
     var data = sheet.getDataRange().getDisplayValues();
     var h = -1;
-    for (var i = 0; i < data.length && h < 0; i++) {
-      if (data[i].some(function (v) { return String(v).trim().toLowerCase() === "match"; })) h = i;
-    }
+    for (var i = 0; i < data.length && h < 0; i++) { if (isHeader(data[i])) h = i; }
     if (h < 0) return reply({ ok: false, error: "nomatchcolumn" });
     var head = data[h].map(function (v) { return String(v).trim().toLowerCase(); });
     var mc = head.indexOf("match");
@@ -120,10 +123,18 @@ function doPost(e) {
     var rc = head.indexOf(role);
     if (rc < 0 || INFO.indexOf(role) >= 0) return reply({ ok: false, error: "role" });
 
+    var oc = head.indexOf("opponent"), dc = head.indexOf("day"), tmc = head.indexOf("time");
+    var same = function (a, b) { return String(a || "").toLowerCase().replace(/[^a-z0-9]/g, "") === String(b || "").toLowerCase().replace(/[^a-z0-9]/g, ""); };
     var find = function () {
       for (var r = h + 1; r < data.length; r++) {
-        if (norm(data[r][mc]) !== norm(req.match)) continue;
         if (tc >= 0 && String(data[r][tc]).trim() !== String(req.team || "").trim()) continue;
+        if (mc >= 0 && req.match) { if (norm(data[r][mc]) !== norm(req.match)) continue; }
+        else {
+          // no Match name: the row for this team's game against this opponent, on this day at this time
+          if (oc < 0 || !same(data[r][oc], req.opp)) continue;
+          if (dc >= 0 && req.day && !same(data[r][dc], req.day)) continue;
+          if (tmc >= 0 && req.time && !same(data[r][tmc], req.time)) continue;
+        }
         return r;
       }
       return -1;

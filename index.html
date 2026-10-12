@@ -1864,8 +1864,9 @@ const vol = { rows: [], roles: [], at: 0, busy: false, header: null, error: "" }
 function volCheck() {
   const keys = new Set();
   divisions().forEach(d => { const m = slot(d.id).model; if (!m) return;
-    (m.pools || []).forEach(p => p.matches.forEach(x => keys.add(volNorm(volPoolMatch(d, p.name, x.num)))));
-    (m.brackets || []).forEach(g => g.matches.forEach(x => { keys.add(volNorm(volBracketMatch(d, m, x))); keys.add(volNorm(volBracketBase(d, m, x))); }));
+    (m.pools || []).forEach(p => p.matches.forEach(x => { const match = volPoolMatch(d, p.name, x.num); keys.add(volNorm(match)); volGame(d, { match, a: x.a, b: x.b, day: x.day }); }));
+    (m.brackets || []).forEach(g => g.matches.forEach(x => { const match = volBracketMatch(d, m, x), base = volBracketBase(d, m, x); keys.add(volNorm(match)); keys.add(volNorm(base));
+      volGame(d, { match, base, a: x.top && x.top.team, b: x.bottom && x.bottom.team, day: x.day }); }));
   });
   keys.delete("");
   const matched = vol.rows.filter(r => keys.has(r.key)), missed = vol.rows.filter(r => !keys.has(r.key));
@@ -1894,8 +1895,20 @@ function volGame(d, g) {
     const codes = [g.a, g.b].filter(n => n && clubOf(n).toLowerCase() === VOL_CLUB.toLowerCase()).map(n => volTeamCode(d, n));
     vol.rows.filter(r => r.key === volNorm(g.base) && codes.includes(r.team)).forEach(r => { r.key = key; });
   }
+  /* A row with no Match name (2026 Nationals sheet: Day, Time, Court, Eclipse Team, Opponent) is the game where
+     its Eclipse Team ("16UG") plays its Opponent, on its Day when both say */
+  if (!volRowsFor(key).length) {
+    const same = (x, y) => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "") === String(y || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    [[g.a, g.b], [g.b, g.a]].forEach(([us, them]) => {
+      if (!us || !them || clubOf(us).toLowerCase() !== VOL_CLUB.toLowerCase()) return;
+      const code = volTeamCode(d, us);
+      vol.rows.filter(r => !r.match && !r.key && r.team === code && same(r.opp, them) && (!r.day || !g.day || dayKey(r.day) === dayKey(g.day)))
+        .slice(0, 1).forEach(r => { r.key = key; });
+    });
+  }
   return volRowsFor(key).length ? { key, match: g.match } : null;
 }
+const volRowId = r => [r.team, r.opp, r.day, r.time].join("|").toLowerCase();
 // A pool match's Match name, as the sheet writes it: "G16u Pool A M1"
 const volPoolMatch = (d, poolName, num) => volShort(d) && num ? `${volShort(d)} ${poolName} M${num}` : "";
 /* A bracket match's Match name: its name on the tab ("G18u Gold Semi"), numbered when several
@@ -1928,18 +1941,24 @@ async function loadVolunteers(force) {
   try {
     const rows = await fetchRows(parts);
     // The header row has a "Match" column ("Match", "Match #", "Match Name")
-    const h = rows.findIndex(r => r.some(v => /^match\b/i.test(v.trim())));
+    // (or, with no Match column, Eclipse Team and Opponent: each row is then the game where that team plays
+    // that opponent on that day, as in the 2026 Nationals sheet)
+    const low = v => String(v || "").trim().toLowerCase();
+    const h = rows.findIndex(r => r.some(v => /^match\b/i.test(v.trim())) || (r.some(v => low(v) === "eclipse team") && r.some(v => low(v) === "opponent")));
     vol.header = h >= 0;
     if (h >= 0) {
       const head = rows[h].map(v => v.trim());
       const col = name => head.findIndex(v => v.toLowerCase() === name);
       const c = { day: col("day"), time: col("time"), court: col("court"), team: col("eclipse team") >= 0 ? col("eclipse team") : col("team"), side: col("home/away"), opp: col("opponent"), match: head.findIndex(v => /^match\b/i.test(v)) };
       vol.roles = head.filter((v, i) => v && i !== c.match && !VOL_INFO.includes(v.toLowerCase()));
-      vol.rows = rows.slice(h + 1).filter(r => (r[c.match] || "").trim()).map(r => ({
-        day: r[c.day] || "", time: r[c.time] || "", court: r[c.court] || "", team: (r[c.team] || "").trim(), side: r[c.side] || "", opp: r[c.opp] || "",
-        match: r[c.match].trim(), key: volNorm(r[c.match]),
+      // a row without a Match name keeps the game it was matched to last time (volGame matches it again otherwise)
+      const before = new Map(vol.rows.filter(r => !r.match && r.key).map(r => [volRowId(r), r.key]));
+      vol.rows = rows.slice(h + 1).filter(r => (r[c.match] || "").trim() || ((r[c.team] || "").trim() && (r[c.opp] || "").trim())).map(r => ({
+        day: r[c.day] || "", time: r[c.time] || "", court: r[c.court] || "", team: (r[c.team] || "").trim(), side: r[c.side] || "", opp: (r[c.opp] || "").trim(),
+        match: (r[c.match] || "").trim(), key: (r[c.match] || "").trim() ? volNorm(r[c.match]) : "",
         cells: Object.fromEntries(vol.roles.map(role => [role, (r[head.indexOf(role)] || "").trim()]))
       }));
+      vol.rows.forEach(r => { if (!r.match) r.key = before.get(volRowId(r)) || ""; });
       vol.at = Date.now();
       // Sign-ups still being saved stay on show (and a new game's rows stay until the sheet has them)
       volInflight.forEach(f => {
@@ -1981,7 +2000,7 @@ async function volPost(body, keepalive) {
 const volStatus = {};   // key -> the thank-you / saved line shown at the top of that game's form
 const volInflight = [];   // sign-ups still being saved, put back after the sheet is re-read
 async function volSave(key, r, role, name) {
-  const ask = { match: r.match, team: r.team, role, name };
+  const ask = { match: r.match, team: r.team, role, name, day: r.day, time: r.time, opp: r.opp };
   const flight = { key, team: r.team, role, name };
   volInflight.push(flight);
   const done = ok => {
@@ -2024,7 +2043,7 @@ async function volRemove(key, r, role) {
   };
   let out;
   // "current" (not "name"): a script from before removals then answers "name" instead of signing the name up again
-  try { out = await volPost({ action: "remove", match: r.match, team: r.team, role, current: name }, true); } catch (e) { out = { error: "network" }; }
+  try { out = await volPost({ action: "remove", match: r.match, team: r.team, role, current: name, day: r.day, time: r.time, opp: r.opp }, true); } catch (e) { out = { error: "network" }; }
   if (out.ok) {
     volStatus[key] = `${name} is off ${role} for ${r.team}. Removed ✓`;
     return done();
@@ -2395,8 +2414,8 @@ function volSetupCard() {
   const { matched, missed, sample } = volCheck();
   return `<div class="msg"><h2>Volunteer sheet</h2>
     <p>${vol.rows.length} game rows read (jobs: ${esc(vol.roles.join(", ") || "none")}). <strong>${matched.length}</strong> match a game in the app and get a Volunteer button${seedingMode() ? " (on My teams and Pool play, which are hidden while seeding mode is on)" : ""}.${link}</p>
-    ${missed.length ? `<p>${missed.length} don't match any game${sample ? `; Match names should look like <strong>${esc(sample)}</strong>` : ""}:</p>
-      <ul style="margin:0 0 8px;padding-left:20px;font-size:14px">${missed.slice(0, 8).map(r => `<li>${esc(r.match)}${r.team ? ` (${esc(r.team)})` : ""}</li>`).join("")}${missed.length > 8 ? `<li>… and ${missed.length - 8} more</li>` : ""}</ul>` : ""}
+    ${missed.length ? `<p>${missed.length} don't match any game${missed.some(r => r.match) && sample ? `; Match names should look like <strong>${esc(sample)}</strong>` : missed.some(r => !r.match) ? " (a row without a Match name needs its Eclipse Team code, like 16UG or 16UB2, and the Opponent spelled as on the pool sheet; teams not yet on a loaded pool sheet can't match)" : ""}:</p>
+      <ul style="margin:0 0 8px;padding-left:20px;font-size:14px">${missed.slice(0, 8).map(r => `<li>${r.match ? `${esc(r.match)}${r.team ? ` (${esc(r.team)})` : ""}` : `${esc([r.day, r.time].filter(Boolean).join(" "))}: ${esc(r.team)} vs ${esc(r.opp)}`}</li>`).join("")}${missed.length > 8 ? `<li>… and ${missed.length - 8} more</li>` : ""}</ul>` : ""}
     <p style="color:var(--muted);font-size:14px">Games only match once their division's tab has loaded; open My teams first if this looks short.</p></div>`;
 }
 function renderSetup() {
