@@ -1858,9 +1858,26 @@ function estimateStarts(matches) {
    a scoreboard operator and a libero tracker), anything else is who signed up. It's read like the
    score sheets (public CSV); sign-ups go through the sheet's Apps Script (VOLUNTEER_SCRIPT), which
    only ever fills an empty cell. */
-const vol = { rows: [], roles: [], at: 0, busy: false };
+const vol = { rows: [], roles: [], at: 0, busy: false, header: null, error: "" };
+/* For the setup page: which volunteer rows match a game on the loaded tabs (a pool match's
+   "G18u Pool A M4", a bracket match's numbered or plain name) */
+function volCheck() {
+  const keys = new Set();
+  divisions().forEach(d => { const m = slot(d.id).model; if (!m) return;
+    (m.pools || []).forEach(p => p.matches.forEach(x => keys.add(volNorm(volPoolMatch(d, p.name, x.num)))));
+    (m.brackets || []).forEach(g => g.matches.forEach(x => { keys.add(volNorm(volBracketMatch(d, m, x))); keys.add(volNorm(volBracketBase(d, m, x))); }));
+  });
+  keys.delete("");
+  const matched = vol.rows.filter(r => keys.has(r.key)), missed = vol.rows.filter(r => !keys.has(r.key));
+  return { matched, missed, sample: [...keys].length ? divisions().map(d => { const m = slot(d.id).model; const p = m && m.pools && m.pools[0]; return p && p.matches[0] ? volPoolMatch(d, p.name, p.matches[0].num) : ""; }).find(Boolean) : "" };
+}
 const VOL_INFO = ["day", "time", "court", "eclipse team", "team", "home/away", "opponent", "match"];
-const volNorm = v => String(v || "").toLowerCase().replace(/pool/g, "").replace(/[^a-z0-9]/g, "");
+/* A Match name compared loosely: no spaces, punctuation or "Pool"; "D1/D2" dropped (the two divisions share
+   pool play); "Match 4", "Game 4", "#4" and "M4" all the same. "G18u D1/D2 Pool A Match 4" = "G18u Pool A M4". */
+const volNorm = v => String(v || "").toLowerCase()
+  .replace(/\bd\s*[1-4]\s*\/\s*d?\s*[1-4]\b/g, "")
+  .replace(/(?:\b(?:match|game|m)\s*#?|#)\s*(\d+)/g, "m$1")
+  .replace(/pool/g, "").replace(/[^a-z0-9]/g, "");
 const isNA = v => /^n\/?a$/i.test(String(v).trim());
 // Division code for Match names and team codes: "G16u" for Girls 16U, "GJV" for Girls JV
 const volShort = d => { const t = tagsOf(d); return t.gender && t.age ? t.gender[0] + (t.age === "JV" ? "JV" : t.age.toLowerCase()) : ""; };
@@ -1910,12 +1927,14 @@ async function loadVolunteers(force) {
   vol.busy = true;
   try {
     const rows = await fetchRows(parts);
-    const h = rows.findIndex(r => r.some(v => /^match$/i.test(v.trim())));
+    // The header row has a "Match" column ("Match", "Match #", "Match Name")
+    const h = rows.findIndex(r => r.some(v => /^match\b/i.test(v.trim())));
+    vol.header = h >= 0;
     if (h >= 0) {
       const head = rows[h].map(v => v.trim());
       const col = name => head.findIndex(v => v.toLowerCase() === name);
-      const c = { day: col("day"), time: col("time"), court: col("court"), team: col("eclipse team") >= 0 ? col("eclipse team") : col("team"), side: col("home/away"), opp: col("opponent"), match: col("match") };
-      vol.roles = head.filter(v => v && !VOL_INFO.includes(v.toLowerCase()));
+      const c = { day: col("day"), time: col("time"), court: col("court"), team: col("eclipse team") >= 0 ? col("eclipse team") : col("team"), side: col("home/away"), opp: col("opponent"), match: head.findIndex(v => /^match\b/i.test(v)) };
+      vol.roles = head.filter((v, i) => v && i !== c.match && !VOL_INFO.includes(v.toLowerCase()));
       vol.rows = rows.slice(h + 1).filter(r => (r[c.match] || "").trim()).map(r => ({
         day: r[c.day] || "", time: r[c.time] || "", court: r[c.court] || "", team: (r[c.team] || "").trim(), side: r[c.side] || "", opp: r[c.opp] || "",
         match: r[c.match].trim(), key: volNorm(r[c.match]),
@@ -1929,7 +1948,8 @@ async function loadVolunteers(force) {
         else if (row && !row.cells[f.role]) { row.cells[f.role] = f.name; row.saving = { ...(row.saving || {}), [f.role]: true }; }
       });
     }
-  } catch (e) { /* keep what we had; the buttons just don't show */ }
+    vol.error = "";
+  } catch (e) { vol.error = "couldn't be read"; /* keep what we had; the buttons just don't show */ }
   vol.busy = false;
   render();
 }
@@ -2365,6 +2385,20 @@ function renderListStatus() {
   });
 }
 
+// The setup page's volunteer check: what the app read from the volunteer sheet and what matched a game
+function volSetupCard() {
+  if (!VOLUNTEER_SHEET) return `<div class="msg"><h2>Volunteer sheet</h2><p>Not set (config.js volunteerSheet), so there are no Volunteer buttons.</p></div>`;
+  const link = /^https:\/\/docs\.google\.com\//.test(VOLUNTEER_SHEET) ? ` <a href="${esc(VOLUNTEER_SHEET)}" target="_blank" rel="noopener">Open it ↗</a>` : "";
+  if (vol.error && !vol.rows.length) return `<div class="msg err"><h2>Volunteer sheet</h2><p>It ${vol.error}. Check it's shared as “Anyone with the link can view”.${link}</p></div>`;
+  if (vol.header === false) return `<div class="msg err"><h2>Volunteer sheet</h2><p>No “Match” column was found on that tab. The header row needs Match and Eclipse Team, then a column per job.${link}</p></div>`;
+  if (!vol.at) return `<div class="msg"><h2>Volunteer sheet</h2><p>Reading…</p></div>`;
+  const { matched, missed, sample } = volCheck();
+  return `<div class="msg"><h2>Volunteer sheet</h2>
+    <p>${vol.rows.length} game rows read (jobs: ${esc(vol.roles.join(", ") || "none")}). <strong>${matched.length}</strong> match a game in the app and get a Volunteer button${seedingMode() ? " (on My teams and Pool play, which are hidden while seeding mode is on)" : ""}.${link}</p>
+    ${missed.length ? `<p>${missed.length} don't match any game${sample ? `; Match names should look like <strong>${esc(sample)}</strong>` : ""}:</p>
+      <ul style="margin:0 0 8px;padding-left:20px;font-size:14px">${missed.slice(0, 8).map(r => `<li>${esc(r.match)}${r.team ? ` (${esc(r.team)})` : ""}</li>`).join("")}${missed.length > 8 ? `<li>… and ${missed.length - 8} more</li>` : ""}</ul>` : ""}
+    <p style="color:var(--muted);font-size:14px">Games only match once their division's tab has loaded; open My teams first if this looks short.</p></div>`;
+}
 function renderSetup() {
   const custom = settings.custom || [];
   const mode = seedingMode();
@@ -2374,6 +2408,7 @@ function renderSetup() {
       <p>To turn it ${mode ? "off" : "on"}, ${mode ? "set Show to <strong>No</strong> on" : "add (or set Show to <strong>Yes</strong> on)"} this row of ${/^https:\/\/docs\.google\.com\//.test(CONFIG_SHEET) ? `<a href="${esc(CONFIG_SHEET)}" target="_blank" rel="noopener">your divisions sheet ↗</a>` : "your divisions sheet"}, then tap Refresh:</p>
       <table class="moderow"><tr><th>Stage</th><th>Division</th><th>Link</th><th>Show</th></tr><tr><td>Mode</td><td>Seeding</td><td></td><td>${mode ? "No" : "Yes"}</td></tr></table>
       <p style="color:var(--muted);font-size:14px">Every phone follows the sheet the next time the app opens or Refresh is tapped.</p></div>
+    ${volSetupCard()}
     <div class="msg" id="listStatus"></div>
     <div class="msg"><h2>Add a division</h2>
       <p>Divisions added here are saved only on this device. To add one for everyone, add a row to the divisions sheet instead.</p>
