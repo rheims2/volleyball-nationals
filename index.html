@@ -595,8 +595,15 @@ function parseBrackets(rows) {
 
   const nearest = (list, r) => list.reduce((best, x) => !best || Math.abs(x.r - r) < Math.abs(best.r - r) ? x : best, null);
 
+  /* 2026 G12u Gold: the "BRONZE BALL" game is the 3rd place game (semifinal losers, "3rd Place Game Below"),
+     with its own "G12u Bronze Ball Champion" title. On a tab with a championship game (UNDISPUTED / CHAMP), two
+     semifinals and a single BRONZE BALL game, that game is 3rd place and its title doesn't start a bracket. */
+  const isSemi = m => /semi/i.test(m.name) && !/\bcon(s|solation)?\.?\s*semi/i.test(m.name);
+  const bronzeThird = matches.some(m => /undisputed|champ/i.test(m.name)) && matches.filter(isSemi).length === 2
+    && matches.filter(m => /bronze\s+ball/i.test(m.name)).length === 1;
+  if (bronzeThird) matches.forEach(m => { if (/bronze\s+ball/i.test(m.name)) m.third = true; });
   // One bracket per "... Champions" title ("... 1st Place" on tabs that have no Champions title)
-  let titles = cells.filter(x => /champions?$/i.test(x.v) && x.v.length > 10);
+  let titles = cells.filter(x => /champions?$/i.test(x.v) && x.v.length > 10 && !(bronzeThird && /bronze\s+ball/i.test(x.v)));
   if (!titles.length) titles = cells.filter(x => /\b1st\s+place$/i.test(x.v) && x.v.length > 10);
   let groups = titles.map(x => {
     let champion = "";
@@ -623,7 +630,11 @@ function parseBrackets(rows) {
   matches.forEach(m => { if (!m.group) { const near = closestMatch(m.r, m.c, placed); m.group = near ? near.x.group : nearest(groups, m.r); } });
   matches.forEach(m => m.group.matches.push(m));
   // A title that only names the event takes its label from the match names ("G18u Gold Semi" -> "Gold")
-  groups.forEach(g => { if (g.label === "Champion") g.label = g.matches.map(m => colourWord(m.name)).find(Boolean) || g.label; });
+  // ...and so does an "… Undisputed Nationals Champions" title over a coloured bracket ("G12u Gold Quarter" -> "Gold")
+  // (the colour most of its matches carry, so one "BRONZE BALL" game doesn't name a Gold bracket)
+  const mainColour = g => { const n = {}; g.matches.forEach(m => { const w = !m.third && colourWord(m.name); if (w) n[w] = (n[w] || 0) + 1; });
+    return Object.keys(n).sort((a, b) => n[b] - n[a])[0] || ""; };
+  groups.forEach(g => { if (g.label === "Champion" || /undisputed|national/i.test(g.label)) g.label = (g.label !== "Champion" && colourWord(g.title)) || mainColour(g) || g.label; });
   // Results tables and awards: their own label ("8A Results") first, then the closest match
   const groupAt = (r, c, text) => {
     const g = groups.find(g => new RegExp("\\b" + g.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i").test(text || ""));
@@ -693,7 +704,7 @@ function parseBrackets(rows) {
     { k: "7th", re: /\b7th\b/i, name: "7th place", extra: true },
     { k: "final", re: /\bball\b|champ|undisputed|final|\b1st\b/i, name: "Final" }
   ];
-  const kindOf = m => KINDS.find(x => x.re.test(m.name));
+  const kindOf = m => m.third ? KINDS.find(x => x.k === "3rd") : KINDS.find(x => x.re.test(m.name));
   const ORDER = ["qualifier", "quarter", "semi", "final", "3rd", "consemi", "5th", "7th"];
   const roundNames = ["Final", "Semifinals", "Quarterfinals", "Round of 16", "Round of 32"];
   groups.forEach(g => {
