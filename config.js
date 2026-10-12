@@ -47,5 +47,5 @@ window.VIEWER_CONFIG = {
 
   // The volunteer sheet's Apps Script web app (see volunteer-script.gs), which saves sign-ups made on
   // the page. Leave it blank ("") and the Volunteer buttons only show the spots and link to the sheet.
-  volunteerScript: ""
+  volunteerScript: "https://script.google.com/macros/s/AKfycbzfCi-ufVbFMGpPGUNvGyoVvYlYBr91zDb3qmOU2ZIvSUS4mXNn4C7ZYfB1-Rv4TdASIQ/exec"
 };
