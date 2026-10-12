@@ -98,6 +98,14 @@
   .club-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; margin-bottom: 16px; position: relative; }
   .club-controls select { font: 500 15px Barlow, sans-serif; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); max-width: 100%; }
   .teampick { position: static; }
+  /* Club and team pickers share the first row half and half (a long club name used to push it past a phone's edge) */
+  .club-controls .clubsel, .club-controls .teampick { flex: 1 1 40%; min-width: 0; max-width: 340px; }
+  /* the team list opens under the team picker, lined up with its right edge */
+  .club-controls .teampick { position: relative; }
+  .club-controls .teampick .teamlist { left: auto; right: 0; max-width: calc(100vw - 32px); }
+  .club-controls .clubsel select { width: 100%; text-overflow: ellipsis; }
+  .teampick summary { display: flex; align-items: center; }
+  .teampick summary .sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* My teams: day-and-time order, earliest or latest first */
   .sortbtn { font: 600 15px Barlow, sans-serif; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; white-space: nowrap; }
   /* What's next: where the winner and loser of a game play, and where each pool place goes */
@@ -1740,9 +1748,9 @@ function renderClub() {
 
   let html = notices();
   html += `<div class="club-controls">
-    <label><span class="sr">Club</span><select id="clubSel"><option value="">${clubs.length ? "Pick your club…" : "Loading clubs…"}</option>${
+    <label class="clubsel"><span class="sr">Club</span><select id="clubSel"><option value="">${clubs.length ? "Pick your club…" : "Loading clubs…"}</option>${
       clubs.map(c => `<option ${c === cur ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
-    ${cur ? `<details class="teampick" id="teamPick" ${teamPickOpen ? "open" : ""}><summary>${esc(summary)}</summary><div class="teamlist">${
+    ${cur ? `<details class="teampick" id="teamPick" ${teamPickOpen ? "open" : ""}><summary><span class="sum">${esc(summary)}</span></summary><div class="teamlist">${
       mine.map(t => `<label><input type="checkbox" data-team="${esc(t.id)}" ${picked.has(t.id) ? "checked" : ""}> ${esc(label(t))}</label>`).join("")}
       <div class="row"><button type="button" class="ghost" id="teamsAll">All</button><button type="button" class="ghost" id="teamsNone">None</button><button type="button" class="refresh" id="teamsDone">Done</button></div></div></details>` : ""}
     ${cur && picked.size ? `<button type="button" class="sortbtn" id="clubSort" aria-label="Sorted by day and time, ${latestFirst ? "latest" : "earliest"} first. Tap to show ${latestFirst ? "earliest" : "latest"} first.">${latestFirst ? "Latest first" : "Earliest first"}<span class="arrow" aria-hidden="true">${latestFirst ? "↑" : "↓"}</span></button>` : ""}
