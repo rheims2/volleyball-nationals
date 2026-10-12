@@ -545,8 +545,8 @@ function parsePools(rows) {
       m.sets = (pool.grid[m.a] && pool.grid[m.a][m.b]) || [];
       m.played = m.sets.length > 0;
     });
-    // The 2026 Nationals sheets say "Complete" on every Results row before a ball is played: final only once games are
-    if (!pool.matches.some(m => m.played)) pool.complete = false;
+    // The 2026 Nationals sheets say "Complete" on every Results row before a ball is played: final only once every game is
+    if (pool.matches.some(m => !m.played)) pool.complete = false;
     const firstOpen = pool.matches.find(m => !m.played);
     if (firstOpen) firstOpen.next = true;
     pool.state = pool.complete ? "final" : pool.matches.some(m => m.played) ? "live" : "new";
