@@ -1798,7 +1798,7 @@ function renderClub() {
         <div class="gwhere">${esc(g.where)}</div>
         <div class="side ${res("a")}${ourSide[0] ? " ours" : ""}"><span class="nm">${nm(g.a)}</span><span class="sets">${setCells(0)}</span></div>
         <div class="side ${res("b")}${ourSide[1] ? " ours" : ""}"><span class="nm">${nm(g.b)}</span><span class="sets">${setCells(1)}</span></div>
-        ${g.forfeit ? `<div class="foot" style="color:var(--muted);font-size:14px;margin-top:6px">${esc(g.forfeit)} didn't show (forfeit)</div>` : ""}${paths(g)}${volButton(g.vol)}</li>`;
+        ${g.forfeit ? `<div class="foot" style="color:var(--muted);font-size:14px;margin-top:6px">${esc(g.forfeit)} didn't show (forfeit)</div>` : ""}${volButton(g.vol)}${paths(g)}</li>`;
     }).join("") + (lastDay !== null ? "</ol></section>" : "");
     // Picked teams with no games yet: their pool and seed from the seeding list
     const waiting = [...picked].filter(id => seeds.has(id) && !list.some(g => g.ids.includes(id)));
@@ -2362,8 +2362,8 @@ function renderBrackets(s, html, sheet) {
     return `<div class="bmatch${flash}${followed}">
       <div class="mhead"><span>${esc(when)}${m.court ? ", " + courtName(m.court) : ""}</span>${tag}</div>
       ${sideHtml("top")}${sideHtml("bottom")}
-      ${foot ? `<div class="foot">${foot}</div>` : ""}${followed ? matchPaths(d, g, m) : ""}${volButton(volGame(d, { match: volBracketMatch(d, model, m), base: volBracketBase(d, model, m), a: m.top && m.top.team, b: m.bottom && m.bottom.team,
-        day: m.day, court: m.court, time: String(m.time || "").toUpperCase() }))}</div>`;
+      ${foot ? `<div class="foot">${foot}</div>` : ""}${volButton(volGame(d, { match: volBracketMatch(d, model, m), base: volBracketBase(d, model, m), a: m.top && m.top.team, b: m.bottom && m.bottom.team,
+        day: m.day, court: m.court, time: String(m.time || "").toUpperCase() }))}${followed ? matchPaths(d, g, m) : ""}</div>`;
   };
 
   const rounds = g.rounds.map(rd => `<div class="round"><h3>${esc(rd.name)}</h3><div class="slots">${
