@@ -1744,6 +1744,8 @@ function renderClub() {
   const label = t => t.age + (t.suffix ? ` – ${t.suffix}` : "");
   // Day-and-time order (settings.clubSort): earliest first, or latest first
   const latestFirst = settings.clubSort === "desc";
+  // Played games (with a score) can be hidden, leaving what's still to play (settings.clubHidePlayed)
+  const hidePlayed = !!settings.clubHidePlayed;
   const summary = !mine.length ? "No teams" : !picked.size ? "Pick your teams" : picked.size === mine.length ? `All teams (${mine.length})` : picked.size <= 2 ? mine.filter(t => picked.has(t.id)).map(label).join(", ") : `${picked.size} of ${mine.length} teams`;
 
   let html = notices();
@@ -1753,7 +1755,8 @@ function renderClub() {
     ${cur ? `<details class="teampick" id="teamPick" ${teamPickOpen ? "open" : ""}><summary><span class="sum">${esc(summary)}</span></summary><div class="teamlist">${
       mine.map(t => `<label><input type="checkbox" data-team="${esc(t.id)}" ${picked.has(t.id) ? "checked" : ""}> ${esc(label(t))}</label>`).join("")}
       <div class="row"><button type="button" class="ghost" id="teamsAll">All</button><button type="button" class="ghost" id="teamsNone">None</button><button type="button" class="refresh" id="teamsDone">Done</button></div></div></details>` : ""}
-    ${cur && picked.size ? `<button type="button" class="sortbtn" id="clubSort" aria-label="Sorted by day and time, ${latestFirst ? "latest" : "earliest"} first. Tap to show ${latestFirst ? "earliest" : "latest"} first.">${latestFirst ? "Latest first" : "Earliest first"}<span class="arrow" aria-hidden="true">${latestFirst ? "↑" : "↓"}</span></button>` : ""}
+    ${cur && picked.size ? `<button type="button" class="sortbtn" id="clubSort" aria-label="Sorted by day and time, ${latestFirst ? "latest" : "earliest"} first. Tap to show ${latestFirst ? "earliest" : "latest"} first.">${latestFirst ? "Latest first" : "Earliest first"}<span class="arrow" aria-hidden="true">${latestFirst ? "↑" : "↓"}</span></button>
+      <button type="button" class="sortbtn" id="clubHide" aria-pressed="${hidePlayed}">${hidePlayed ? "Show played games" : "Hide played games"}</button>` : ""}
   </div>`;
   if (club.busy) html += `<p class="note" id="clubProgress" style="padding:0">${club.verb} divisions… ${club.done} of ${club.total}</p>`;
   if (club.failed.length) html += `<div class="msg err"><p>Couldn't load: ${esc(club.failed.join(", "))}.</p></div>`;
@@ -1780,7 +1783,8 @@ function renderClub() {
       return t && sp.end === undefined ? `<div class="whatnext"><span class="wn-k">Next</span> → ${t}</div>` : "";
     };
     let lastDay = null;
-    const items = (latestFirst ? [...list].reverse() : list).map(g => {
+    const shown = hidePlayed ? list.filter(g => !g.played) : list, hidden = list.length - shown.length;
+    const items = (latestFirst ? [...shown].reverse() : shown).map(g => {
       let head = "";
       const dk = dayKey(g.day);
       if (dk !== lastDay) { head = `${lastDay !== null ? "</ol></section>" : ""}<h3 class="dayhead">${esc(DAY_NAMES[dk] || "Day to be set")}</h3><section class="card"><ol class="matches">`; lastDay = dk; }
@@ -1805,7 +1809,8 @@ function renderClub() {
     const seedCard = waiting.length ? `<section class="card seedcard"><h3>Pool seeding</h3><ol class="seedlist">${waiting.map(id => {
       const t = seeds.get(id); return `<li><span class="team"><b>${esc(t.label)}</b> · ${esc(t.team)}</span><span class="seedwhere">${esc(seedText(t) || "Pool and seed not posted yet")}</span></li>`; }).join("")}</ol></section>` : "";
     html += !picked.size ? `<div class="msg"><h2>Pick your teams</h2><p>Tap “Pick your teams”, tick the ones you follow, then Done.</p></div>`
-      : seedCard + (list.length ? items : seedCard ? "" : `<div class="msg"><p>No matches yet for these teams.</p></div>`);
+      : seedCard + (hidden ? `<p class="note" style="padding:0 0 10px">${hidden} played ${hidden === 1 ? "game" : "games"} hidden.</p>` : "")
+        + (shown.length ? items : hidden ? `<div class="msg"><p>All of these teams' games so far have been played. Tap “Show played games” to see them.</p></div>` : seedCard ? "" : `<div class="msg"><p>No matches yet for these teams.</p></div>`);
     if (picked.size) html += `<p class="note" style="padding:12px 0 0">Bracket matches show up here once teams are placed in the brackets. ★ marks your teams.</p>`;
   }
   $("main").innerHTML = html;
@@ -1823,6 +1828,8 @@ function renderClub() {
   }
   const sortBtn = $("clubSort");
   if (sortBtn) sortBtn.addEventListener("click", () => { settings.clubSort = latestFirst ? "asc" : "desc"; save(); render(); });
+  const hideBtn = $("clubHide");
+  if (hideBtn) hideBtn.addEventListener("click", () => { settings.clubHidePlayed = !hidePlayed; save(); render(); });
 }
 
 function busy(on) {
