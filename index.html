@@ -2354,63 +2354,81 @@ function renderBrackets(s, html, sheet) {
   const followed = followIn(d, allTeams);
   $("followSel").innerHTML = `<option value="">Follow a team…</option>` + allTeams.map(t => `<option ${t === followed ? "selected" : ""}>${esc(t)}</option>`).join("");
 
-  const g = list.find(x => x.key === s.active) || list[0];
-  const mine = t => isMine(d, t);
-  const badge = g.state === "final" ? `<span class="badge final">Final</span>` : g.state === "live" ? `<span class="badge live">In progress</span>` : `<span class="badge">Not started</span>`;
-  const courtName = c => esc(courtLabel(c));
+  /* A tab of one-game brackets (Gold & Silver: the champion game and the Silver final) shows them all, one
+     under the other, so the second isn't hidden behind its button */
+  const stacked = list.length > 1 && list.every(x => x.matches.length === 1);
+  /* Who fills an empty slot, from another tab's Advancement ("4A Gold Ball winner" for the GBSS-4A slot,
+     "3A Gold Ball runner-up" for Silver-1): match -> { top, bottom } */
+  const feeds = new Map();
+  sameBook(d).filter(x => x.id !== d.id).forEach(x => { const mod = slot(x.id).model; if (!mod || mod.kind !== "brackets") return;
+    mod.brackets.forEach(src => Object.entries(src.placeTo || {}).forEach(([n, note]) => {
+      if (+n > 2) return;
+      const sp = findDest(x, note); if (!sp || !sp.m || sp.d.id !== d.id) return;
+      const want = slotKey((String(note).match(/(\d+[A-Z]?)\s*$/i) || [])[1]);
+      const side = ["top", "bottom"].find(sd => slotKey(sp.m[sd] ? sp.m[sd].seed : sp.m[sd + "Seed"]) === want); if (!side) return;
+      const who = /^\d+A$/i.test(src.label) ? `${src.label} Gold Ball` : src.title;
+      (feeds.get(sp.m) || feeds.set(sp.m, {}).get(sp.m))[side] = `${who} ${+n === 1 ? "winner" : "runner-up"}`;
+    })); });
+  if (stacked) $("pools").innerHTML = "";
+  const section = g => {
+    const mine = t => isMine(d, t);
+    const badge = g.state === "final" ? `<span class="badge final">Final</span>` : g.state === "live" ? `<span class="badge live">In progress</span>` : `<span class="badge">Not started</span>`;
+    const courtName = c => esc(courtLabel(c));
 
-  const matchCard = (m, i, roundName) => {
-    const sideHtml = (side) => {
-      const t = m[side];
-      const won = m.winner === side, lost = m.winner && !won;
-      const sets = m.sets.map(([w, l]) => won ? `<span class="w">${w}</span>` : `<span>${l}</span>`).join("");
-      // An empty slot still shows its seed ("#2", "8A #3") when the sheet has one
-      const seedText = v => /^\d+$/.test(v) ? "#" + v : v || "";
-      if (!t) return `<div class="side none tbd"><span class="nm"><span class="seed">${esc(seedText(m[side + "Seed"]))}</span>To be decided</span><span class="sets"></span></div>`;
-      const seed = seedText(t.seed);
-      return `<div class="side ${won ? "won" : lost ? "lost" : "none"}${mine(t.team) ? " mine" : ""}"><span class="nm"><span class="seed">${esc(seed)}</span>${esc(t.team)}</span><span class="sets">${m.winner ? sets : ""}</span></div>`;
+    const matchCard = (m, i, roundName) => {
+      const sideHtml = (side) => {
+        const t = m[side];
+        const won = m.winner === side, lost = m.winner && !won;
+        const sets = m.sets.map(([w, l]) => won ? `<span class="w">${w}</span>` : `<span>${l}</span>`).join("");
+        // An empty slot still shows its seed ("#2", "8A #3") when the sheet has one
+        const seedText = v => /^\d+$/.test(v) ? "#" + v : v || "";
+        if (!t) return `<div class="side none tbd"><span class="nm"><span class="seed">${esc(seedText(m[side + "Seed"]))}</span>${esc(feeds.get(m)?.[side] || "To be decided")}</span><span class="sets"></span></div>`;
+        const seed = seedText(t.seed);
+        return `<div class="side ${won ? "won" : lost ? "lost" : "none"}${mine(t.team) ? " mine" : ""}"><span class="nm"><span class="seed">${esc(seed)}</span>${esc(t.team)}</span><span class="sets">${m.winner ? sets : ""}</span></div>`;
+      };
+      const when = [m.day, m.time].filter(Boolean).join(" ");
+      const tag = m.winner ? `<span class="tag final">Final</span>` : m.next ? `<span class="tag next">Up next</span>` : "";
+      const loser = m.winner ? m[m.winner === "top" ? "bottom" : "top"] : null;
+      const winnerT = m.winner ? m[m.winner] : null;
+      // "Silver-2" reads better as the game it is: "G18u D2 SILVER BALL (Silver-2)"
+      const destName = (note, won) => { const sp = afterMatch(d, g, m, won);
+        const nm = sp && sp.m && sp.m.name ? sp.m.name.replace(/\s*\(best of \d\)/i, "") : "";
+        return esc(nm && slotKey(nm) !== slotKey(note) ? `${nm} (${note})` : note); };
+      const foot = [m.forfeit ? `${esc(m.forfeit)} didn't show (forfeit)` : "", m.format,
+        m.winnerTo ? `${winnerT ? esc(winnerT.team) : "Winner"} moves to ${destName(m.winnerTo, true)}` : "",
+        m.loserTo ? `${loser ? esc(loser.team) : "Loser"} moves to ${destName(m.loserTo, false)}` : ""].filter(Boolean).join(". ");
+      const flash = flashKeys.has(`${g.key}|m${m.r}-${m.c}`) ? " flash" : "";
+      const followed = (m.top && mine(m.top.team)) || (m.bottom && mine(m.bottom.team)) ? " mine" : "";
+      return `<div class="bmatch${flash}${followed}">
+        <div class="mhead"><span>${esc(when)}${m.court ? ", " + courtName(m.court) : ""}</span>${tag}</div>
+        ${sideHtml("top")}${sideHtml("bottom")}
+        ${foot ? `<div class="foot">${foot}</div>` : ""}${volButton(volGame(d, { match: volBracketMatch(d, model, m), base: volBracketBase(d, model, m), a: m.top && m.top.team, b: m.bottom && m.bottom.team,
+          day: m.day, court: m.court, time: String(m.time || "").toUpperCase() }))}${followed ? matchPaths(d, g, m) : ""}</div>`;
     };
-    const when = [m.day, m.time].filter(Boolean).join(" ");
-    const tag = m.winner ? `<span class="tag final">Final</span>` : m.next ? `<span class="tag next">Up next</span>` : "";
-    const loser = m.winner ? m[m.winner === "top" ? "bottom" : "top"] : null;
-    const winnerT = m.winner ? m[m.winner] : null;
-    // "Silver-2" reads better as the game it is: "G18u D2 SILVER BALL (Silver-2)"
-    const destName = (note, won) => { const sp = afterMatch(d, g, m, won);
-      const nm = sp && sp.m && sp.m.name ? sp.m.name.replace(/\s*\(best of \d\)/i, "") : "";
-      return esc(nm && slotKey(nm) !== slotKey(note) ? `${nm} (${note})` : note); };
-    const foot = [m.forfeit ? `${esc(m.forfeit)} didn't show (forfeit)` : "", m.format,
-      m.winnerTo ? `${winnerT ? esc(winnerT.team) : "Winner"} moves to ${destName(m.winnerTo, true)}` : "",
-      m.loserTo ? `${loser ? esc(loser.team) : "Loser"} moves to ${destName(m.loserTo, false)}` : ""].filter(Boolean).join(". ");
-    const flash = flashKeys.has(`${g.key}|m${m.r}-${m.c}`) ? " flash" : "";
-    const followed = (m.top && mine(m.top.team)) || (m.bottom && mine(m.bottom.team)) ? " mine" : "";
-    return `<div class="bmatch${flash}${followed}">
-      <div class="mhead"><span>${esc(when)}${m.court ? ", " + courtName(m.court) : ""}</span>${tag}</div>
-      ${sideHtml("top")}${sideHtml("bottom")}
-      ${foot ? `<div class="foot">${foot}</div>` : ""}${volButton(volGame(d, { match: volBracketMatch(d, model, m), base: volBracketBase(d, model, m), a: m.top && m.top.team, b: m.bottom && m.bottom.team,
-        day: m.day, court: m.court, time: String(m.time || "").toUpperCase() }))}${followed ? matchPaths(d, g, m) : ""}</div>`;
+
+    const rounds = g.rounds.map(rd => `<div class="round"><h3>${esc(rd.name)}</h3><div class="slots">${
+      rd.matches.map((m, i) => matchCard(m, i, rd.name)).join("")}</div></div>`).join("");
+    // 3rd place and the consolation side, below the bracket
+    const extra = (g.extra || []).map(rd => `<div class="round"><h3>${esc(rd.name)}</h3><div class="slots">${
+      rd.matches.map((m, i) => matchCard(m, i, rd.name)).join("")}</div></div>`).join("");
+
+    const champ = g.champion ? `<div class="champ"><span class="lbl">Champion</span><span class="who">${esc(g.champion)}</span>${g.award ? `<span class="award">Wins ${esc(g.award)}</span>` : ""}</div>` : "";
+
+    // Silver and Bronze tabs have no results table, so theirs is built from the matches and has no "Next" column
+    const hasNext = g.results.some(r => r.adv);
+    const results = g.results.length ? `<section class="card"><h3>Results</h3><table><thead><tr><th></th><th>Team</th>${hasNext ? "<th>Next</th>" : ""}</tr></thead><tbody>${
+      g.results.map((r, i) => `<tr class="${mine(r.team) ? "mine" : ""}"><td class="rank">${esc(r.rank || i + 1)}</td><td><span class="team">${esc(r.team)}</span></td>${hasNext ? `<td>${esc(r.adv)}</td>` : ""}</tr>`).join("")
+    }</tbody></table><p class="note">${hasNext ? "Final placement and where each team plays next, from the tournament sheet." : "Final placement from the match results."}</p></section>` : "";
+
+    return `<div class="pool-head"><h2>${esc(stacked && g.label === "Champion" && !/champ/i.test(g.title) ? g.title + " Championship" : g.title)}</h2>${badge}${sheet}</div>
+      ${champ}
+      ${g.rounds.length > 1 ? `<div class="rotate-hint"><svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2.5" width="10" height="17" rx="2"/><path d="M11.5 16.5h3"/><path d="M3 15a10 10 0 0 0 7 8.5"/><path d="M7 23.8l3 -.3 -.6-3"/></svg><span>Rotate phone to see the full bracket</span></div>` : ""}
+      <div class="bracket" style="--rounds:${g.rounds.length}">${rounds}</div>
+      ${extra ? `<h2 class="subhead">Placement matches</h2><div class="bracket placements">${extra}</div>` : ""}
+      ${results}
+  `;
   };
-
-  const rounds = g.rounds.map(rd => `<div class="round"><h3>${esc(rd.name)}</h3><div class="slots">${
-    rd.matches.map((m, i) => matchCard(m, i, rd.name)).join("")}</div></div>`).join("");
-  // 3rd place and the consolation side, below the bracket
-  const extra = (g.extra || []).map(rd => `<div class="round"><h3>${esc(rd.name)}</h3><div class="slots">${
-    rd.matches.map((m, i) => matchCard(m, i, rd.name)).join("")}</div></div>`).join("");
-
-  const champ = g.champion ? `<div class="champ"><span class="lbl">Champion</span><span class="who">${esc(g.champion)}</span>${g.award ? `<span class="award">Wins ${esc(g.award)}</span>` : ""}</div>` : "";
-
-  // Silver and Bronze tabs have no results table, so theirs is built from the matches and has no "Next" column
-  const hasNext = g.results.some(r => r.adv);
-  const results = g.results.length ? `<section class="card"><h3>Results</h3><table><thead><tr><th></th><th>Team</th>${hasNext ? "<th>Next</th>" : ""}</tr></thead><tbody>${
-    g.results.map((r, i) => `<tr class="${mine(r.team) ? "mine" : ""}"><td class="rank">${esc(r.rank || i + 1)}</td><td><span class="team">${esc(r.team)}</span></td>${hasNext ? `<td>${esc(r.adv)}</td>` : ""}</tr>`).join("")
-  }</tbody></table><p class="note">${hasNext ? "Final placement and where each team plays next, from the tournament sheet." : "Final placement from the match results."}</p></section>` : "";
-
-  html += `<div class="pool-head"><h2>${esc(g.title)}</h2>${badge}${sheet}</div>
-    ${champ}
-    ${g.rounds.length > 1 ? `<div class="rotate-hint"><svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2.5" width="10" height="17" rx="2"/><path d="M11.5 16.5h3"/><path d="M3 15a10 10 0 0 0 7 8.5"/><path d="M7 23.8l3 -.3 -.6-3"/></svg><span>Rotate phone to see the full bracket</span></div>` : ""}
-    <div class="bracket" style="--rounds:${g.rounds.length}">${rounds}</div>
-    ${extra ? `<h2 class="subhead">Placement matches</h2><div class="bracket placements">${extra}</div>` : ""}
-    ${results}
-`;
+  html += stacked ? list.map(section).join("") : section(list.find(x => x.key === s.active) || list[0]);
   $("main").innerHTML = html;
   flashKeys = new Set();
 }

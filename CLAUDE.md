@@ -95,7 +95,7 @@ Nationals layouts:
 - Gold Ball: 4-team classes (G18u D1) or 8-team classes with quarterfinals, several classes per tab.
 - Silver: 4 teams, semis, final and 3rd place (G18u D1 Silver).
 - Bronze: 4 teams with 3rd place, or 8 teams with quarterfinals and a consolation side flowing left (Con Semi, 5th, 7th) (G18u D1 Bronze).
-- Gold & Silver: a one-match champion game ("CHAMP" or "UNDISPUTED", seeds "4A"/"3A") plus a one-match Silver final.
+- Gold & Silver: a one-match champion game ("CHAMP" or "UNDISPUTED", seeds "4A"/"3A") plus a one-match Silver final. A tab whose brackets are all one game shows them one under the other with no class buttons (the Silver final used to sit behind a "Silver" button and was missed); a champion game whose title lacks "Champ" gets "Championship" added. Empty slots say who fills them, from the same spreadsheet's Gold Ball Advancement ("4A Gold Ball winner", "3A Gold Ball runner-up"; `feeds` in `renderBrackets`), once that tab has loaded.
 - GBSS (and B14u "Gold"): 4 teams, semis, final and 3rd place.
 - Copper: the 8-team Bronze layout with the final named "Copper 1st" (most divisions); G12u Copper has 6 teams, with the top two seeds going straight to the semis.
 - Copper Finals (G16u D2) and Iron Finals: only the 1st, 3rd, 5th (and 7th) place matches, seeded from the pools ("1A" = 1st in pool A). GJV Iron's 7th place match has a single team.
