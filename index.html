@@ -686,8 +686,12 @@ function parseBrackets(rows) {
       const row = rows[r] || []; const rc = row.indexOf("Rank"); if (rc < 0) continue;
       const ac = row.findIndex(v => /^advancement$/i.test(v)), tc = row.findIndex(v => /^teams?$/i.test(v));
       for (let rr = r + 1; rr < r + 12; rr++) {
-        const team = at(rr, tc); if (!team) break;
-        g.results.push({ rank: at(rr, rc), team, adv: ac >= 0 ? at(rr, ac) : "" });
+        const rank = at(rr, rc), team = at(rr, tc), adv = ac >= 0 ? at(rr, ac) : "";
+        // where each place goes ("1st" -> "GBSS-4A", "2nd" -> "Silver-2"), there before the teams are
+        const placeRow = /^\d+(st|nd|rd|th)?$/i.test(rank);
+        if (placeRow && adv) (g.placeTo = g.placeTo || {})[parseInt(rank, 10)] = adv;
+        if (!team) { if (placeRow) continue; break; }
+        g.results.push({ rank, team, adv });
       }
       break;
     }
@@ -768,6 +772,13 @@ function parseBrackets(rows) {
       places[1] = g.champion; put(1, fin);
       [3, 5, 7].forEach(n => { const rd = all.find(x => x.kind && x.kind.k === n + (n === 3 ? "rd" : "th")); put(n, rd && rd.matches[0]); });
       g.results = Object.keys(places).map(Number).sort((a, b) => a - b).map(n => ({ rank: String(n), team: places[n], adv: "" }));
+    }
+    // The final's winner and loser go where the results table's 1st and 2nd go: a class final ("4A") feeds
+    // the Gold & Silver tab ("GBSS-4A" champion game, "Silver-2"), unless a note on the tab already says
+    const finM = g.rounds.length && g.rounds[g.rounds.length - 1].matches.length === 1 ? g.rounds[g.rounds.length - 1].matches[0] : null;
+    if (finM && g.placeTo && !g.qualifier) {
+      if (!finM.winnerTo && g.placeTo[1]) finM.winnerTo = g.placeTo[1];
+      if (!finM.loserTo && g.placeTo[2]) finM.loserTo = g.placeTo[2];
     }
     const allPlayed = g.qualifier && g.matches.every(m => m.winner);
     g.state = (g.complete && g.matches.some(m => m.winner)) || g.champion || allPlayed ? "final" : g.matches.some(m => m.winner) ? "live" : "new";
@@ -1519,7 +1530,9 @@ function findDest(d, text) {
   }
   // A plain number belongs to the tab named like the destination ("Copper-4" -> the Copper tab,
   // "Iron Finals-1A" -> Iron Finals); with no such tab loaded there's no answer rather than a guess
-  const words = (fam.toLowerCase().match(/[a-z]{3,}/g) || []).filter(w => !/^(class|division|bracket|brackets|pool|pools|team|final|finals|game|the|and)$/.test(w));
+  // "GBSS-4A" is the Gold & Silver tab's champion game, seeded "4A"
+  const words = (fam.toLowerCase().match(/[a-z]{3,}/g) || []).filter(w => !/^(class|division|bracket|brackets|pool|pools|team|final|finals|game|the|and)$/.test(w))
+    .flatMap(w => w === "gbss" ? ["gold", "silver"] : [w]);
   const want = slotKey(cls ? cls + n : mm[2]);
   for (const x of nearBooks(d, fam)) {
     const mod = slot(x.id).model; if (mod.kind !== "brackets") continue;
@@ -1546,7 +1559,7 @@ function classGame(d, label, won) {
 // Where the winner (won = true) or the loser of bracket match m plays next
 function afterMatch(d, g, m, won) {
   const note = won ? m.winnerTo : m.loserTo;
-  if (note) return findDest(d, note) || { end: `moves to ${note}` };
+  if (note) return findDest(d, note) || (won && /^\d+A$/i.test(g.label) && classGame(d, g.label, true)) || { end: `moves to ${note}` };
   const nx = won ? m.nextWin : m.nextLose;
   if (nx) return spotOf(d, g, nx);
   const rd = roundOf(g, m), k = rd && rd.kind && rd.kind.k;
@@ -2361,9 +2374,13 @@ function renderBrackets(s, html, sheet) {
     const tag = m.winner ? `<span class="tag final">Final</span>` : m.next ? `<span class="tag next">Up next</span>` : "";
     const loser = m.winner ? m[m.winner === "top" ? "bottom" : "top"] : null;
     const winnerT = m.winner ? m[m.winner] : null;
+    // "Silver-2" reads better as the game it is: "G18u D2 SILVER BALL (Silver-2)"
+    const destName = (note, won) => { const sp = afterMatch(d, g, m, won);
+      const nm = sp && sp.m && sp.m.name ? sp.m.name.replace(/\s*\(best of \d\)/i, "") : "";
+      return esc(nm && slotKey(nm) !== slotKey(note) ? `${nm} (${note})` : note); };
     const foot = [m.forfeit ? `${esc(m.forfeit)} didn't show (forfeit)` : "", m.format,
-      m.winnerTo ? (winnerT ? `${esc(winnerT.team)} moves to ${esc(m.winnerTo)}` : `Winner moves to ${esc(m.winnerTo)}`) : "",
-      m.loserTo ? (loser ? `${esc(loser.team)} moves to ${esc(m.loserTo)}` : `Loser moves to ${esc(m.loserTo)}`) : ""].filter(Boolean).join(". ");
+      m.winnerTo ? `${winnerT ? esc(winnerT.team) : "Winner"} moves to ${destName(m.winnerTo, true)}` : "",
+      m.loserTo ? `${loser ? esc(loser.team) : "Loser"} moves to ${destName(m.loserTo, false)}` : ""].filter(Boolean).join(". ");
     const flash = flashKeys.has(`${g.key}|m${m.r}-${m.c}`) ? " flash" : "";
     const followed = (m.top && mine(m.top.team)) || (m.bottom && mine(m.bottom.team)) ? " mine" : "";
     return `<div class="bmatch${flash}${followed}">
